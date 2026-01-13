@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Hole in the Wall – Pose Challenge</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- MediaPipe Pose -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+</head>
+<body>
+    <!-- Màn hình Start -->
+    <div id="startScreen" class="screen active">
+        <div class="start-container">
+            <div class="start-content">
+                <h1 class="title">🎯 AI Hole in the Wall</h1>
+                <h2 class="subtitle">Pose Challenge</h2>
+                <p class="description">Đứng trước camera và bắt chước tư thế để xuyên qua tường!</p>
+                
+                <!-- Camera Preview -->
+                <div class="camera-preview-wrapper">
+                    <div class="camera-preview">
+                        <video id="previewVideo" autoplay playsinline muted></video>
+                        <div class="camera-status" id="cameraStatus">
+                            <span class="status-icon">📹</span>
+                            <span class="status-text">Đang tải camera...</span>
+                        </div>
+                    </div>
+                    <div class="preview-hint">
+                        <p>💡 Đảm bảo bạn đứng trong khung hình và có đủ ánh sáng</p>
+                    </div>
+                </div>
+                
+                <button id="startBtn" class="btn btn-primary">
+                    <span class="btn-text">Bắt Đầu Game</span>
+                    <span class="btn-icon">▶</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Màn hình Countdown -->
+    <div id="countdownScreen" class="screen">
+        <div class="container">
+            <div id="countdownNumber" class="countdown">3</div>
+            <p class="countdown-text">Chuẩn bị...</p>
+        </div>
+    </div>
+
+    <!-- Màn hình Game -->
+    <div id="gameScreen" class="screen">
+        <div class="game-container">
+            <!-- Header: Lives và Score -->
+            <div class="game-header">
+                <div class="lives-container">
+                    <span class="label">Mạng:</span>
+                    <div id="lives" class="lives">
+                        <span class="heart">❤️</span>
+                        <span class="heart">❤️</span>
+                        <span class="heart">❤️</span>
+                    </div>
+                </div>
+                <div class="score-container">
+                    <span class="label">Điểm:</span>
+                    <span id="score" class="score">0</span>
+                </div>
+                <div class="round-container">
+                    <span class="label">Round:</span>
+                    <span id="round" class="round">1</span>
+                </div>
+            </div>
+
+            <!-- Main Game Area -->
+            <div class="game-main">
+                <!-- Camera View với Skeleton -->
+                <div class="camera-section">
+                    <div class="video-wrapper">
+                        <video id="video" autoplay playsinline></video>
+                        <canvas id="outputCanvas"></canvas>
+                        <div id="similarityDisplay" class="similarity-display">
+                            <span id="similarityText">0%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Wall với Pose Silhouette -->
+                <div class="wall-section">
+                    <div id="wall" class="wall">
+                        <canvas id="poseCanvas"></canvas>
+                        <div class="wall-overlay"></div>
+                    </div>
+                    <div class="pose-hint">
+                        <p>Bắt chước tư thế này!</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Progress Bar -->
+            <div class="progress-container">
+                <div id="progressBar" class="progress-bar"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Màn hình Game Over -->
+    <div id="gameOverScreen" class="screen">
+        <div class="container">
+            <h1 class="title">Game Over!</h1>
+            <div class="final-score">
+                <p class="score-label">Điểm cuối cùng:</p>
+                <p id="finalScore" class="final-score-value">0</p>
+            </div>
+            <button id="restartBtn" class="btn btn-primary">Chơi Lại</button>
+        </div>
+    </div>
+
+    <!-- Confetti Container -->
+    <div id="confettiContainer"></div>
+
+    <!-- Scripts -->
+    <script src="pose.js"></script>
+    <script src="game.js"></script>
+    <script src="main.js"></script>
+</body>
+</html>
+
