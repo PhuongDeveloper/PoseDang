@@ -436,28 +436,141 @@ class PoseDetector {
             }
         });
 
-        // Tính điểm từng phần
-        const angleScore = angleCount > 0 ? (angleSimilarity / angleCount) : 0;
-        const boneScore = boneCount > 0 ? (boneSimilarity / boneCount) : 0;
-        const positionScore = positionCount > 0 ? (positionSimilarity / positionCount) : 0;
+        // Tính điểm từng phần - đảm bảo không NaN
+        const angleScore = (angleCount > 0 && isFinite(angleSimilarity)) ? (angleSimilarity / angleCount) : 0;
+        const boneScore = (boneCount > 0 && isFinite(boneSimilarity)) ? (boneSimilarity / boneCount) : 0;
+        const positionScore = (positionCount > 0 && isFinite(positionSimilarity)) ? (positionSimilarity / positionCount) : 0;
 
-        // Kết hợp với trọng số: góc 50%, tỷ lệ xương 30%, vị trí 20%
-        // Góc quan trọng nhất vì nó phản ánh đúng tư thế
-        let finalScore = angleScore * 0.5 + boneScore * 0.3 + positionScore * 0.2;
+        // Đảm bảo tất cả điểm đều hợp lệ
+        const safeAngleScore = isFinite(angleScore) ? angleScore : 0;
+        const safeBoneScore = isFinite(boneScore) ? boneScore : 0;
+        const safePositionScore = isFinite(positionScore) ? positionScore : 0;
 
-        // Nếu có đủ điểm để so sánh, tính điểm chính xác hơn
-        if (angleCount >= 4 && boneCount >= 6 && positionCount >= 8) {
-            // Điểm đầy đủ, không cần điều chỉnh
-        } else if (angleCount >= 2 && boneCount >= 4) {
-            // Thiếu một số điểm nhưng vẫn đủ để đánh giá
-            // Giảm nhẹ điểm để tránh false positive
-            finalScore *= 0.95;
-        } else {
-            // Thiếu quá nhiều điểm, điểm thấp
-            finalScore *= 0.7;
+        // Tập trung vào chân nhiều hơn: góc chân 40%, góc tay 20%, tỷ lệ xương chân 25%, tỷ lệ xương tay 5%, vị trí 10%
+        // Tính điểm riêng cho chân và tay
+        let legAngleScore = 0;
+        let legAngleCount = 0;
+        let armAngleScore = 0;
+        let armAngleCount = 0;
+        
+        // Góc chân (quan trọng nhất)
+        const legAngles = [[23, 25, 27], [24, 26, 28]]; // left knee, right knee
+        legAngles.forEach(([a, b, c]) => {
+            const ca = this.currentPose[a];
+            const cb = this.currentPose[b];
+            const cc = this.currentPose[c];
+            const ta = targetPose[a];
+            const tb = targetPose[b];
+            const tc = targetPose[c];
+            
+            if (ca && cb && cc && ta && tb && tc &&
+                (ca.visibility ?? 1) > 0.2 && (cb.visibility ?? 1) > 0.2 && (cc.visibility ?? 1) > 0.2) {
+                const currentAngle = this.computeAngle(ca, cb, cc);
+                const targetAngle = this.computeAngle(ta, tb, tc);
+                let diff = Math.abs(currentAngle - targetAngle);
+                if (diff > 180) diff = 360 - diff;
+                const similarity = Math.max(0, Math.pow(1 - (diff / 90), 1.5));
+                legAngleScore += similarity;
+                legAngleCount++;
+            }
+        });
+        
+        // Góc tay
+        const armAngles = [[11, 13, 15], [12, 14, 16]]; // left elbow, right elbow
+        armAngles.forEach(([a, b, c]) => {
+            const ca = this.currentPose[a];
+            const cb = this.currentPose[b];
+            const cc = this.currentPose[c];
+            const ta = targetPose[a];
+            const tb = targetPose[b];
+            const tc = targetPose[c];
+            
+            if (ca && cb && cc && ta && tb && tc &&
+                (ca.visibility ?? 1) > 0.2 && (cb.visibility ?? 1) > 0.2 && (cc.visibility ?? 1) > 0.2) {
+                const currentAngle = this.computeAngle(ca, cb, cc);
+                const targetAngle = this.computeAngle(ta, tb, tc);
+                let diff = Math.abs(currentAngle - targetAngle);
+                if (diff > 180) diff = 360 - diff;
+                const similarity = Math.max(0, Math.pow(1 - (diff / 90), 1.5));
+                armAngleScore += similarity;
+                armAngleCount++;
+            }
+        });
+        
+        const finalLegAngleScore = legAngleCount > 0 ? (legAngleScore / legAngleCount) : 0;
+        const finalArmAngleScore = armAngleCount > 0 ? (armAngleScore / armAngleCount) : 0;
+        
+        // Tính tỷ lệ xương chân và tay riêng
+        let legBoneScore = 0;
+        let legBoneCount = 0;
+        let armBoneScore = 0;
+        let armBoneCount = 0;
+        
+        // Xương chân
+        const legBones = [[23, 25], [25, 27], [24, 26], [26, 28]];
+        legBones.forEach(([a, b]) => {
+            const ca = this.currentPose[a];
+            const cb = this.currentPose[b];
+            const ta = targetPose[a];
+            const tb = targetPose[b];
+            
+            if (ca && cb && ta && tb &&
+                (ca.visibility ?? 1) > 0.2 && (cb.visibility ?? 1) > 0.2) {
+                const currentLen = Math.sqrt(Math.pow(ca.x - cb.x, 2) + Math.pow(ca.y - cb.y, 2));
+                const targetLen = Math.sqrt(Math.pow(ta.x - tb.x, 2) + Math.pow(ta.y - tb.y, 2));
+                if (targetLen > 0 && currentLen > 0) {
+                    const ratio = Math.min(currentLen, targetLen) / Math.max(currentLen, targetLen);
+                    legBoneScore += Math.pow(ratio, 0.8);
+                    legBoneCount++;
+                }
+            }
+        });
+        
+        // Xương tay
+        const armBones = [[11, 13], [13, 15], [12, 14], [14, 16]];
+        armBones.forEach(([a, b]) => {
+            const ca = this.currentPose[a];
+            const cb = this.currentPose[b];
+            const ta = targetPose[a];
+            const tb = targetPose[b];
+            
+            if (ca && cb && ta && tb &&
+                (ca.visibility ?? 1) > 0.2 && (cb.visibility ?? 1) > 0.2) {
+                const currentLen = Math.sqrt(Math.pow(ca.x - cb.x, 2) + Math.pow(ca.y - cb.y, 2));
+                const targetLen = Math.sqrt(Math.pow(ta.x - tb.x, 2) + Math.pow(ta.y - tb.y, 2));
+                if (targetLen > 0 && currentLen > 0) {
+                    const ratio = Math.min(currentLen, targetLen) / Math.max(currentLen, targetLen);
+                    armBoneScore += Math.pow(ratio, 0.8);
+                    armBoneCount++;
+                }
+            }
+        });
+        
+        const finalLegBoneScore = legBoneCount > 0 ? (legBoneScore / legBoneCount) : 0;
+        const finalArmBoneScore = armBoneCount > 0 ? (armBoneScore / armBoneCount) : 0;
+
+        // Kết hợp với trọng số: chân quan trọng hơn
+        // Góc chân 40%, góc tay 15%, tỷ lệ xương chân 25%, tỷ lệ xương tay 10%, vị trí 10%
+        let finalScore = finalLegAngleScore * 0.4 + 
+                        finalArmAngleScore * 0.15 + 
+                        finalLegBoneScore * 0.25 + 
+                        finalArmBoneScore * 0.1 + 
+                        safePositionScore * 0.1;
+
+        // Đảm bảo điểm hợp lệ
+        if (!isFinite(finalScore) || isNaN(finalScore)) {
+            finalScore = 0;
         }
 
-            return Math.round(Math.min(100, finalScore * 100));
+        // Nếu thiếu điểm chân, điểm sẽ thấp
+        if (legAngleCount < 2 || legBoneCount < 4) {
+            finalScore *= 0.6; // Giảm đáng kể nếu thiếu điểm chân
+        }
+
+        // Đảm bảo điểm trong khoảng 0-1
+        finalScore = Math.max(0, Math.min(1, finalScore));
+
+        return Math.round(finalScore * 100);
         } catch (error) {
             console.error('Lỗi trong comparePoses:', error);
             return 0;
@@ -483,142 +596,97 @@ class PoseDetector {
      * Trả về normalized landmarks
      */
     generateRandomPose() {
-        // Danh sách các pose mẫu (normalized landmarks) - Tăng từ 5 lên 15 pose
+        // Danh sách các pose mẫu tập trung vào CHÂN - dễ nhận diện hơn
         const poseTemplates = [
-            // Pose 1: Tư thế đứng thẳng, tay giơ cao
+            // Pose 1: Chân rộng, tay giơ cao (dễ)
             this.createPoseTemplate({
                 shoulders: { y: -0.3, x: -0.15, x2: 0.15 },
                 elbows: { y: -0.5, x: -0.2, x2: 0.2 },
                 wrists: { y: -0.7, x: -0.2, x2: 0.2 },
-                hips: { y: 0.1, x: -0.1, x2: 0.1 },
-                knees: { y: 0.3, x: -0.1, x2: 0.1 },
-                ankles: { y: 0.5, x: -0.1, x2: 0.1 }
-            }),
-            // Pose 2: Tư thế chữ T
-            this.createPoseTemplate({
-                shoulders: { y: -0.3, x: -0.3, x2: 0.3 },
-                elbows: { y: -0.3, x: -0.4, x2: 0.4 },
-                wrists: { y: -0.3, x: -0.5, x2: 0.5 },
-                hips: { y: 0.1, x: -0.1, x2: 0.1 },
-                knees: { y: 0.3, x: -0.1, x2: 0.1 },
-                ankles: { y: 0.5, x: -0.1, x2: 0.1 }
-            }),
-            // Pose 3: Tư thế một tay giơ cao
-            this.createPoseTemplate({
-                shoulders: { y: -0.3, x: -0.15, x2: 0.15 },
-                elbows: { y: -0.5, x: -0.2, x2: -0.1 },
-                wrists: { y: -0.7, x: -0.2, x2: -0.15 },
-                hips: { y: 0.1, x: -0.1, x2: 0.1 },
-                knees: { y: 0.3, x: -0.1, x2: 0.1 },
-                ankles: { y: 0.5, x: -0.1, x2: 0.1 }
-            }),
-            // Pose 4: Tư thế chân rộng, tay chống hông
-            this.createPoseTemplate({
-                shoulders: { y: -0.3, x: -0.15, x2: 0.15 },
-                elbows: { y: -0.25, x: -0.25, x2: 0.25 },
-                wrists: { y: -0.2, x: -0.3, x2: 0.3 },
-                hips: { y: 0.1, x: -0.15, x2: 0.15 },
-                knees: { y: 0.3, x: -0.2, x2: 0.2 },
-                ankles: { y: 0.5, x: -0.2, x2: 0.2 }
-            }),
-            // Pose 5: Tư thế một chân giơ
-            this.createPoseTemplate({
-                shoulders: { y: -0.3, x: -0.15, x2: 0.15 },
-                elbows: { y: -0.4, x: -0.2, x2: 0.2 },
-                wrists: { y: -0.5, x: -0.2, x2: 0.2 },
-                hips: { y: 0.1, x: -0.1, x2: 0.1 },
-                knees: { y: 0.3, x: -0.1, x2: 0.15 },
-                ankles: { y: 0.5, x: -0.1, x2: 0.2 }
-            }),
-            // Pose 6: Tư thế tay chéo trước ngực
-            this.createPoseTemplate({
-                shoulders: { y: -0.3, x: -0.15, x2: 0.15 },
-                elbows: { y: -0.25, x: 0.05, x2: -0.05 },
-                wrists: { y: -0.2, x: 0.2, x2: -0.2 },
-                hips: { y: 0.1, x: -0.1, x2: 0.1 },
-                knees: { y: 0.3, x: -0.1, x2: 0.1 },
-                ankles: { y: 0.5, x: -0.1, x2: 0.1 }
-            }),
-            // Pose 7: Tư thế tay dang ngang, một chân giơ
-            this.createPoseTemplate({
-                shoulders: { y: -0.3, x: -0.3, x2: 0.3 },
-                elbows: { y: -0.3, x: -0.4, x2: 0.4 },
-                wrists: { y: -0.3, x: -0.5, x2: 0.5 },
-                hips: { y: 0.1, x: -0.1, x2: 0.1 },
-                knees: { y: 0.3, x: -0.1, x2: 0.2 },
-                ankles: { y: 0.5, x: -0.1, x2: 0.3 }
-            }),
-            // Pose 8: Tư thế squat nhẹ, tay giơ cao
-            this.createPoseTemplate({
-                shoulders: { y: -0.25, x: -0.15, x2: 0.15 },
-                elbows: { y: -0.45, x: -0.2, x2: 0.2 },
-                wrists: { y: -0.65, x: -0.2, x2: 0.2 },
-                hips: { y: 0.15, x: -0.1, x2: 0.1 },
-                knees: { y: 0.35, x: -0.1, x2: 0.1 },
-                ankles: { y: 0.5, x: -0.1, x2: 0.1 }
-            }),
-            // Pose 9: Tư thế một tay giơ, một tay chống hông
-            this.createPoseTemplate({
-                shoulders: { y: -0.3, x: -0.15, x2: 0.15 },
-                elbows: { y: -0.5, x: -0.2, x2: 0.25 },
-                wrists: { y: -0.7, x: -0.2, x2: 0.3 },
-                hips: { y: 0.1, x: -0.1, x2: 0.1 },
-                knees: { y: 0.3, x: -0.1, x2: 0.1 },
-                ankles: { y: 0.5, x: -0.1, x2: 0.1 }
-            }),
-            // Pose 10: Tư thế tay chéo trên đầu
-            this.createPoseTemplate({
-                shoulders: { y: -0.3, x: -0.15, x2: 0.15 },
-                elbows: { y: -0.45, x: -0.1, x2: 0.1 },
-                wrists: { y: -0.6, x: 0.05, x2: -0.05 },
-                hips: { y: 0.1, x: -0.1, x2: 0.1 },
-                knees: { y: 0.3, x: -0.1, x2: 0.1 },
-                ankles: { y: 0.5, x: -0.1, x2: 0.1 }
-            }),
-            // Pose 11: Tư thế tay dang rộng, chân rộng
-            this.createPoseTemplate({
-                shoulders: { y: -0.3, x: -0.3, x2: 0.3 },
-                elbows: { y: -0.3, x: -0.4, x2: 0.4 },
-                wrists: { y: -0.3, x: -0.5, x2: 0.5 },
                 hips: { y: 0.1, x: -0.2, x2: 0.2 },
                 knees: { y: 0.3, x: -0.25, x2: 0.25 },
                 ankles: { y: 0.5, x: -0.25, x2: 0.25 }
             }),
-            // Pose 12: Tư thế một tay giơ, chân rộng
-            this.createPoseTemplate({
-                shoulders: { y: -0.3, x: -0.15, x2: 0.15 },
-                elbows: { y: -0.5, x: -0.2, x2: 0.1 },
-                wrists: { y: -0.7, x: -0.2, x2: 0.05 },
-                hips: { y: 0.1, x: -0.15, x2: 0.15 },
-                knees: { y: 0.3, x: -0.2, x2: 0.2 },
-                ankles: { y: 0.5, x: -0.2, x2: 0.2 }
-            }),
-            // Pose 13: Tư thế tay chéo dưới
-            this.createPoseTemplate({
-                shoulders: { y: -0.3, x: -0.15, x2: 0.15 },
-                elbows: { y: -0.15, x: -0.05, x2: 0.05 },
-                wrists: { y: 0, x: 0.1, x2: -0.1 },
-                hips: { y: 0.1, x: -0.1, x2: 0.1 },
-                knees: { y: 0.3, x: -0.1, x2: 0.1 },
-                ankles: { y: 0.5, x: -0.1, x2: 0.1 }
-            }),
-            // Pose 14: Tư thế tay giơ cao, một chân giơ
+            // Pose 2: Một chân giơ cao, tay giơ cao (rất dễ nhận diện)
             this.createPoseTemplate({
                 shoulders: { y: -0.3, x: -0.15, x2: 0.15 },
                 elbows: { y: -0.5, x: -0.2, x2: 0.2 },
                 wrists: { y: -0.7, x: -0.2, x2: 0.2 },
                 hips: { y: 0.1, x: -0.1, x2: 0.1 },
-                knees: { y: 0.3, x: -0.1, x2: 0.25 },
-                ankles: { y: 0.5, x: -0.1, x2: 0.35 }
+                knees: { y: 0.3, x: -0.1, x2: 0.3 },
+                ankles: { y: 0.5, x: -0.1, x2: 0.45 }
             }),
-            // Pose 15: Tư thế tay dang ngang, một chân co
+            // Pose 3: Squat sâu, tay giơ cao (dễ nhận diện)
+            this.createPoseTemplate({
+                shoulders: { y: -0.2, x: -0.15, x2: 0.15 },
+                elbows: { y: -0.4, x: -0.2, x2: 0.2 },
+                wrists: { y: -0.6, x: -0.2, x2: 0.2 },
+                hips: { y: 0.2, x: -0.1, x2: 0.1 },
+                knees: { y: 0.4, x: -0.1, x2: 0.1 },
+                ankles: { y: 0.5, x: -0.1, x2: 0.1 }
+            }),
+            // Pose 4: Chân rộng, một chân co, tay dang ngang (dễ)
+            this.createPoseTemplate({
+                shoulders: { y: -0.3, x: -0.3, x2: 0.3 },
+                elbows: { y: -0.3, x: -0.4, x2: 0.4 },
+                wrists: { y: -0.3, x: -0.5, x2: 0.5 },
+                hips: { y: 0.1, x: -0.15, x2: 0.15 },
+                knees: { y: 0.3, x: -0.2, x2: 0.3 },
+                ankles: { y: 0.5, x: -0.2, x2: 0.45 }
+            }),
+            // Pose 5: Lunge (chân trước sau), tay giơ cao (rất dễ)
+            this.createPoseTemplate({
+                shoulders: { y: -0.3, x: -0.15, x2: 0.15 },
+                elbows: { y: -0.5, x: -0.2, x2: 0.2 },
+                wrists: { y: -0.7, x: -0.2, x2: 0.2 },
+                hips: { y: 0.1, x: -0.15, x2: 0.15 },
+                knees: { y: 0.3, x: -0.25, x2: 0.15 },
+                ankles: { y: 0.5, x: -0.3, x2: 0.1 }
+            }),
+            // Pose 6: Chân rộng, một chân giơ ngang, tay giơ cao
+            this.createPoseTemplate({
+                shoulders: { y: -0.3, x: -0.15, x2: 0.15 },
+                elbows: { y: -0.5, x: -0.2, x2: 0.2 },
+                wrists: { y: -0.7, x: -0.2, x2: 0.2 },
+                hips: { y: 0.1, x: -0.15, x2: 0.15 },
+                knees: { y: 0.3, x: -0.2, x2: 0.25 },
+                ankles: { y: 0.5, x: -0.2, x2: 0.4 }
+            }),
+            // Pose 7: Một chân giơ cao về phía sau, tay dang ngang
             this.createPoseTemplate({
                 shoulders: { y: -0.3, x: -0.3, x2: 0.3 },
                 elbows: { y: -0.3, x: -0.4, x2: 0.4 },
                 wrists: { y: -0.3, x: -0.5, x2: 0.5 },
                 hips: { y: 0.1, x: -0.1, x2: 0.1 },
                 knees: { y: 0.3, x: -0.1, x2: 0.25 },
-                ankles: { y: 0.5, x: -0.1, x2: 0.4 }
+                ankles: { y: 0.5, x: -0.1, x2: 0.35 }
+            }),
+            // Pose 8: Chân rộng, squat nhẹ, tay dang ngang
+            this.createPoseTemplate({
+                shoulders: { y: -0.25, x: -0.3, x2: 0.3 },
+                elbows: { y: -0.25, x: -0.4, x2: 0.4 },
+                wrists: { y: -0.25, x: -0.5, x2: 0.5 },
+                hips: { y: 0.15, x: -0.2, x2: 0.2 },
+                knees: { y: 0.35, x: -0.25, x2: 0.25 },
+                ankles: { y: 0.5, x: -0.25, x2: 0.25 }
+            }),
+            // Pose 9: Một chân giơ cao, một chân co, tay giơ cao
+            this.createPoseTemplate({
+                shoulders: { y: -0.3, x: -0.15, x2: 0.15 },
+                elbows: { y: -0.5, x: -0.2, x2: 0.2 },
+                wrists: { y: -0.7, x: -0.2, x2: 0.2 },
+                hips: { y: 0.1, x: -0.1, x2: 0.1 },
+                knees: { y: 0.3, x: -0.15, x2: 0.3 },
+                ankles: { y: 0.5, x: -0.15, x2: 0.45 }
+            }),
+            // Pose 10: Chân rộng, một chân co cao, tay giơ cao
+            this.createPoseTemplate({
+                shoulders: { y: -0.3, x: -0.15, x2: 0.15 },
+                elbows: { y: -0.5, x: -0.2, x2: 0.2 },
+                wrists: { y: -0.7, x: -0.2, x2: 0.2 },
+                hips: { y: 0.1, x: -0.2, x2: 0.2 },
+                knees: { y: 0.3, x: -0.25, x2: 0.35 },
+                ankles: { y: 0.5, x: -0.25, x2: 0.5 }
             })
         ];
 

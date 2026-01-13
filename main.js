@@ -268,11 +268,16 @@ function setupGameCallbacks() {
     // Similarity update (real-time)
     game.onSimilarityUpdate = (similarity) => {
         if (similarityText && similarityDisplay) {
-            similarityText.textContent = `${similarity}%`;
+            // Đảm bảo similarity là số hợp lệ
+            const safeSimilarity = (typeof similarity === 'number' && !isNaN(similarity) && isFinite(similarity)) 
+                ? Math.max(0, Math.min(100, similarity)) 
+                : 0;
+            
+            similarityText.textContent = `${safeSimilarity}%`;
             
             // Đổi màu theo similarity
             similarityDisplay.classList.remove('pass', 'fail');
-            if (similarity >= game.similarityThreshold) {
+            if (safeSimilarity >= game.similarityThreshold) {
                 similarityDisplay.classList.add('pass');
             } else {
                 similarityDisplay.classList.add('fail');
