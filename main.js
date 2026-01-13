@@ -24,6 +24,7 @@ const poseCanvas = document.getElementById('poseCanvas');
 const progressBar = document.getElementById('progressBar');
 const similarityText = document.getElementById('similarityText');
 const similarityDisplay = document.getElementById('similarityDisplay');
+const thresholdHint = document.getElementById('thresholdHint');
 const countdownNumber = document.getElementById('countdownNumber');
 const cameraStatus = document.getElementById('cameraStatus');
 
@@ -256,8 +257,8 @@ function setupGameCallbacks() {
     };
     
     // Score gain effect
-    game.onScoreGain = (newScore) => {
-        showScorePopup();
+    game.onScoreGain = (newScore, pointsGained) => {
+        showScorePopup(pointsGained);
     };
     
     // Life lost effect
@@ -266,22 +267,32 @@ function setupGameCallbacks() {
     };
     
     // Similarity update (real-time)
-    game.onSimilarityUpdate = (similarity) => {
+    game.onSimilarityUpdate = (similarity, threshold) => {
         if (similarityText && similarityDisplay) {
             // Đảm bảo similarity là số hợp lệ
             const safeSimilarity = (typeof similarity === 'number' && !isNaN(similarity) && isFinite(similarity)) 
                 ? Math.max(0, Math.min(100, similarity)) 
                 : 0;
             
-            similarityText.textContent = `${safeSimilarity}%`;
+            const currentThreshold = threshold || game.getSimilarityThreshold();
             
-            // Đổi màu theo similarity
+            // Hiển thị similarity và threshold
+            similarityText.textContent = `${safeSimilarity}% / ${currentThreshold}%`;
+            
+            // Đổi màu theo similarity so với threshold hiện tại
             similarityDisplay.classList.remove('pass', 'fail');
-            if (safeSimilarity >= game.similarityThreshold) {
+            if (safeSimilarity >= currentThreshold) {
                 similarityDisplay.classList.add('pass');
             } else {
                 similarityDisplay.classList.add('fail');
             }
+        }
+    };
+    
+    // Threshold update
+    game.onThresholdUpdate = (threshold) => {
+        if (thresholdHint) {
+            thresholdHint.textContent = `Cần: ${threshold}%`;
         }
     };
     
@@ -322,7 +333,7 @@ function setupGameCallbacks() {
             if (game && game.isPlaying && game.currentTargetPose) {
                 const similarity = game.checkPose();
                 if (game.onSimilarityUpdate && similarity !== undefined && !isNaN(similarity)) {
-                    game.onSimilarityUpdate(similarity);
+                    game.onSimilarityUpdate(similarity, game.similarityThreshold);
                 }
             }
         } catch (error) {
@@ -465,8 +476,18 @@ function playFailSound() {
 /**
  * Hiệu ứng cộng điểm
  */
-function showScorePopup() {
+function showScorePopup(pointsGained = 1) {
     if (!scorePopup) return;
+    
+    // Hiển thị số điểm nhận được
+    scorePopup.textContent = `+${pointsGained}`;
+    if (pointsGained > 1) {
+        scorePopup.style.fontSize = '4.5rem';
+        scorePopup.style.color = '#ffd700';
+    } else {
+        scorePopup.style.fontSize = '4rem';
+        scorePopup.style.color = '#4ade80';
+    }
     
     scorePopup.classList.remove('show');
     void scorePopup.offsetWidth; // Trigger reflow

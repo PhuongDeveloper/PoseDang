@@ -15,9 +15,12 @@ class Game {
         this.currentTargetPose = null;
         
         // Game settings (có thể chỉnh)
-        this.similarityThreshold = 70; // Ngưỡng similarity để pass (%)
-        this.baseWallSpeed = 5000; // Thời gian tường di chuyển (ms)
-        this.speedIncrease = 200; // Tăng tốc mỗi round (ms)
+        this.similarityThreshold = 70; // Ngưỡng similarity để pass (%) - CỐ ĐỊNH để dễ căn chỉnh
+        this.baseWallSpeed = 6000; // Thời gian tường di chuyển ban đầu (ms)
+        this.minWallSpeed = 1500; // Thời gian tối thiểu (ms)
+        this.speedDecreaseRate = 0.15; // Tỷ lệ giảm thời gian mỗi round (15%)
+        this.basePointsPerRound = 1; // Điểm cơ bản mỗi round
+        this.pointsMultiplier = 1.2; // Hệ số nhân điểm mỗi round
         
         // Wall animation
         this.wallProgress = 0;
@@ -32,6 +35,7 @@ class Game {
         this.onProgressUpdate = null;
         this.onSimilarityUpdate = null;
         this.onTimeRemainingUpdate = null;
+        this.onThresholdUpdate = null;
         this.onGameOver = null;
         this.onRoundComplete = null;
         this.onScoreGain = null;
@@ -80,6 +84,11 @@ class Game {
         this.wallProgress = 0;
         this.wallStartTime = Date.now();
         this.hasCheckedPose = false;
+        
+        // Update threshold display
+        if (this.onThresholdUpdate) {
+            this.onThresholdUpdate(this.similarityThreshold);
+        }
         
         // Bắt đầu animation tường
         this.animateWall();
@@ -133,13 +142,25 @@ class Game {
     }
 
     /**
-     * Lấy thời gian di chuyển của tường (giảm dần theo round)
+     * Lấy thời gian di chuyển của tường (giảm mạnh theo round)
      */
     getWallDuration() {
-        return Math.max(
-            this.baseWallSpeed - (this.round - 1) * this.speedIncrease,
-            2000 // Tối thiểu 2 giây
-        );
+        if (this.round === 1) {
+            return this.baseWallSpeed; // Round 1: 6 giây
+        }
+        
+        // Giảm theo hàm mũ: mỗi round giảm 15%
+        const duration = this.baseWallSpeed * Math.pow(1 - this.speedDecreaseRate, this.round - 1);
+        return Math.max(duration, this.minWallSpeed);
+    }
+    
+    /**
+     * Tính điểm nhận được khi pass round này
+     */
+    getPointsForRound() {
+        // Điểm tăng theo hàm mũ: round 1 = 1 điểm, round 5 = ~2 điểm, round 10 = ~6 điểm
+        const points = Math.floor(this.basePointsPerRound * Math.pow(this.pointsMultiplier, this.round - 1));
+        return Math.max(1, points); // Tối thiểu 1 điểm
     }
 
     /**
@@ -150,9 +171,9 @@ class Game {
 
         const similarity = this.poseDetector.comparePoses(this.currentTargetPose);
         
-        // Update similarity display (sẽ được gọi từ main.js)
+        // Update similarity display với threshold (sẽ được gọi từ main.js)
         if (this.onSimilarityUpdate) {
-            this.onSimilarityUpdate(similarity);
+            this.onSimilarityUpdate(similarity, this.similarityThreshold);
         }
 
         return similarity;
@@ -171,13 +192,14 @@ class Game {
         
         if (similarity >= this.similarityThreshold) {
             // PASS
-            this.score++;
+            const pointsGained = this.getPointsForRound();
+            this.score += pointsGained;
             this.round++;
             this.updateUI();
             
-            // Callback cho hiệu ứng
+            // Callback cho hiệu ứng với điểm nhận được
             if (this.onScoreGain) {
-                this.onScoreGain(this.score);
+                this.onScoreGain(this.score, pointsGained);
             }
             if (this.onRoundComplete) {
                 this.onRoundComplete(true, similarity);
