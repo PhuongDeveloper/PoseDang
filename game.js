@@ -15,7 +15,7 @@ class Game {
         this.currentTargetPose = null;
         
         // Game settings (có thể chỉnh)
-        this.similarityThreshold = 80; // Ngưỡng similarity để pass (%) - CỐ ĐỊNH để dễ căn chỉnh
+        this.similarityThreshold = 75; // Ngưỡng similarity để pass (%) - CỐ ĐỊNH để dễ căn chỉnh
         this.baseWallSpeed = 6000; // Thời gian tường di chuyển ban đầu (ms)
         this.minWallSpeed = 1500; // Thời gian tối thiểu (ms)
         this.speedDecreaseRate = 0.15; // Tỷ lệ giảm thời gian mỗi round (15%)

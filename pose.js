@@ -482,8 +482,8 @@ class PoseDetector {
                 const angleDiffFromStanding = Math.abs(targetAngle - standingAngle);
                 const normalizedDiff = angleDiffFromStanding > 180 ? 360 - angleDiffFromStanding : angleDiffFromStanding;
                 
-                // Nếu target pose có chân đứng thẳng (góc gần với standing < 15 độ), không tính điểm chân này
-                if (normalizedDiff < 15) {
+                // Nếu target pose có chân đứng thẳng (góc gần với standing < 12 độ), không tính điểm chân này
+                if (normalizedDiff < 12) {
                     // Không tính điểm cho chân này vì nó giống đứng thẳng
                     return;
                 }
@@ -495,16 +495,16 @@ class PoseDetector {
                 let diff = Math.abs(currentAngle - targetAngle);
                 if (diff > 180) diff = 360 - diff;
                 
-                // Tolerance chặt chẽ hơn vì chỉ tính các phần khác với đứng thẳng
+                // Tolerance nới lỏng hơn để dễ đạt điểm hơn
                 let similarity = 0;
-                if (diff <= 15) {
-                    similarity = 1 - (diff / 15) * 0.2; // 0-15 độ: 80-100%
-                } else if (diff <= 30) {
-                    similarity = 0.8 - ((diff - 15) / 15) * 0.4; // 15-30 độ: 40-80%
-                } else if (diff <= 50) {
-                    similarity = 0.4 - ((diff - 30) / 20) * 0.3; // 30-50 độ: 10-40%
+                if (diff <= 25) {
+                    similarity = 1 - (diff / 25) * 0.15; // 0-25 độ: 85-100%
+                } else if (diff <= 45) {
+                    similarity = 0.85 - ((diff - 25) / 20) * 0.35; // 25-45 độ: 50-85%
+                } else if (diff <= 70) {
+                    similarity = 0.5 - ((diff - 45) / 25) * 0.35; // 45-70 độ: 15-50%
                 } else {
-                    similarity = Math.max(0, 0.1 - (diff - 50) / 500); // >50 độ: 0-10%
+                    similarity = Math.max(0, 0.15 - (diff - 70) / 400); // >70 độ: 0-15%
                 }
                 
                 legAngleScore += similarity;
@@ -537,8 +537,8 @@ class PoseDetector {
                 const angleDiffFromStanding = Math.abs(targetAngle - standingAngle);
                 const normalizedDiff = angleDiffFromStanding > 180 ? 360 - angleDiffFromStanding : angleDiffFromStanding;
                 
-                // Nếu target pose có tay đứng thẳng (góc gần với standing < 20 độ), không tính điểm tay này
-                if (normalizedDiff < 20) {
+                // Nếu target pose có tay đứng thẳng (góc gần với standing < 18 độ), không tính điểm tay này
+                if (normalizedDiff < 18) {
                     return;
                 }
                 
@@ -549,14 +549,14 @@ class PoseDetector {
                 let diff = Math.abs(currentAngle - targetAngle);
                 if (diff > 180) diff = 360 - diff;
                 
-                // Tolerance chặt chẽ hơn
+                // Tolerance nới lỏng hơn để dễ đạt điểm hơn
                 let similarity = 0;
-                if (diff <= 20) {
-                    similarity = 1 - (diff / 20) * 0.25; // 0-20 độ: 75-100%
-                } else if (diff <= 40) {
-                    similarity = 0.75 - ((diff - 20) / 20) * 0.45; // 20-40 độ: 30-75%
+                if (diff <= 30) {
+                    similarity = 1 - (diff / 30) * 0.2; // 0-30 độ: 80-100%
+                } else if (diff <= 55) {
+                    similarity = 0.8 - ((diff - 30) / 25) * 0.4; // 30-55 độ: 40-80%
                 } else {
-                    similarity = Math.max(0, 0.3 - (diff - 40) / 200); // >40 độ: 0-30%
+                    similarity = Math.max(0, 0.4 - (diff - 55) / 200); // >55 độ: 0-40%
                 }
                 
                 armAngleScore += similarity;
@@ -602,7 +602,8 @@ class PoseDetector {
                 const currentLen = Math.sqrt(Math.pow(ca.x - cb.x, 2) + Math.pow(ca.y - cb.y, 2));
                 if (targetLen > 0 && currentLen > 0) {
                     const ratio = Math.min(currentLen, targetLen) / Math.max(currentLen, targetLen);
-                    const similarity = ratio >= 0.9 ? ratio : ratio * 0.7;
+                    // Nới lỏng tolerance cho xương chân
+                    const similarity = ratio >= 0.8 ? ratio : ratio * 0.85;
                     legBoneScore += similarity;
                     legBoneCount++;
                 }
@@ -643,7 +644,8 @@ class PoseDetector {
                 const currentLen = Math.sqrt(Math.pow(ca.x - cb.x, 2) + Math.pow(ca.y - cb.y, 2));
                 if (targetLen > 0 && currentLen > 0) {
                     const ratio = Math.min(currentLen, targetLen) / Math.max(currentLen, targetLen);
-                    const similarity = ratio >= 0.85 ? ratio : ratio * 0.6;
+                    // Nới lỏng tolerance cho xương tay
+                    const similarity = ratio >= 0.75 ? ratio : ratio * 0.75;
                     armBoneScore += similarity;
                     armBoneCount++;
                 }
@@ -680,26 +682,34 @@ class PoseDetector {
             finalScore += armScore * armWeight * 0.3; // Tay chiếm 30% trọng số
         }
         
-        // 6. Penalty nghiêm ngặt cho thiếu điểm các phần cần kiểm tra
+        // 6. Penalty nhẹ hơn cho thiếu điểm các phần cần kiểm tra
         if (legAngleWeight > 0 && legAngleCount === 0) {
-            finalScore *= 0.3; // Thiếu góc chân cần kiểm tra → giảm 70%
+            finalScore *= 0.5; // Thiếu góc chân cần kiểm tra → giảm 50%
         }
         if (legBoneWeight > 0 && legBoneCount === 0) {
-            finalScore *= 0.4; // Thiếu xương chân cần kiểm tra → giảm 60%
+            finalScore *= 0.6; // Thiếu xương chân cần kiểm tra → giảm 40%
         }
         if (armAngleWeight > 0 && armAngleCount === 0) {
-            finalScore *= 0.5; // Thiếu góc tay cần kiểm tra → giảm 50%
+            finalScore *= 0.7; // Thiếu góc tay cần kiểm tra → giảm 30%
         }
         if (armBoneWeight > 0 && armBoneCount === 0) {
-            finalScore *= 0.6; // Thiếu xương tay cần kiểm tra → giảm 40%
+            finalScore *= 0.8; // Thiếu xương tay cần kiểm tra → giảm 20%
         }
         
-        // 7. Yêu cầu điểm tối thiểu cho các phần cần kiểm tra
-        if (legAngleWeight > 0 && finalLegAngleScore < 0.6) {
-            finalScore *= 0.7; // Chân không đủ chính xác → giảm 30%
+        // 7. Yêu cầu điểm tối thiểu nhẹ hơn cho các phần cần kiểm tra
+        if (legAngleWeight > 0 && finalLegAngleScore < 0.4) {
+            finalScore *= 0.85; // Chân không đủ chính xác → giảm 15%
         }
-        if (legBoneWeight > 0 && finalLegBoneScore < 0.7) {
-            finalScore *= 0.7; // Xương chân không đủ chính xác → giảm 30%
+        if (legBoneWeight > 0 && finalLegBoneScore < 0.5) {
+            finalScore *= 0.85; // Xương chân không đủ chính xác → giảm 15%
+        }
+        
+        // 8. Bonus điểm nếu làm gần đúng (tăng điểm cho các phần gần đúng)
+        if (legAngleWeight > 0 && finalLegAngleScore > 0.5) {
+            finalScore *= 1.1; // Bonus 10% nếu chân làm tốt
+        }
+        if (armAngleWeight > 0 && finalArmAngleScore > 0.5) {
+            finalScore *= 1.05; // Bonus 5% nếu tay làm tốt
         }
         
         // Đảm bảo điểm hợp lệ
@@ -743,7 +753,7 @@ class PoseDetector {
                 const diff = Math.abs(targetAngle - standingAngle);
                 const normalizedDiff = diff > 180 ? 360 - diff : diff;
                 
-                if (normalizedDiff >= 15) {
+                if (normalizedDiff >= 12) {
                     result.legDifferent = true;
                     result.legAngleCount++;
                 }
@@ -766,7 +776,7 @@ class PoseDetector {
                 const diff = Math.abs(targetAngle - standingAngle);
                 const normalizedDiff = diff > 180 ? 360 - diff : diff;
                 
-                if (normalizedDiff >= 20) {
+                if (normalizedDiff >= 18) {
                     result.armDifferent = true;
                     result.armAngleCount++;
                 }
