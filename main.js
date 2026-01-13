@@ -130,6 +130,9 @@ async function startGame() {
         // Chuyển sang màn hình countdown
         showScreen('countdown');
         
+        // Setup canvas trước khi khởi tạo
+        setupCanvas();
+        
         // Khởi tạo PoseDetector với video chính
         await poseDetector.initialize(video, outputCanvas);
         
@@ -151,6 +154,7 @@ async function startGame() {
                 }
             });
             video.srcObject = stream;
+            window.previewStream = stream; // Lưu lại để dùng sau
         }
         
         // Đợi video load
@@ -158,9 +162,32 @@ async function startGame() {
             if (video.readyState >= 2) {
                 resolve();
             } else {
-                video.onloadedmetadata = resolve;
+                const checkReady = () => {
+                    if (video.readyState >= 2) {
+                        resolve();
+                    } else {
+                        setTimeout(checkReady, 100);
+                    }
+                };
+                video.onloadedmetadata = () => {
+                    if (video.readyState >= 2) {
+                        resolve();
+                    } else {
+                        checkReady();
+                    }
+                };
+                // Timeout sau 5 giây
+                setTimeout(() => {
+                    if (video.readyState < 2) {
+                        console.warn('Video chưa sẵn sàng sau 5 giây, tiếp tục...');
+                        resolve();
+                    }
+                }, 5000);
             }
         });
+        
+        // Setup lại canvas sau khi video đã load
+        setupCanvas();
         
         // Countdown
         await countdown(3);
