@@ -313,11 +313,15 @@ function setupGameCallbacks() {
     
     // Real-time similarity check (mỗi frame)
     setInterval(() => {
-        if (game && game.isPlaying && game.currentTargetPose) {
-            const similarity = game.checkPose();
-            if (game.onSimilarityUpdate) {
-                game.onSimilarityUpdate(similarity);
+        try {
+            if (game && game.isPlaying && game.currentTargetPose) {
+                const similarity = game.checkPose();
+                if (game.onSimilarityUpdate && similarity !== undefined && !isNaN(similarity)) {
+                    game.onSimilarityUpdate(similarity);
+                }
             }
+        } catch (error) {
+            console.error('Lỗi khi check pose:', error);
         }
     }, 100); // Update mỗi 100ms
 }

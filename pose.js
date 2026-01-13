@@ -59,25 +59,35 @@ class PoseDetector {
      * Xử lý kết quả từ MediaPipe
      */
     onResults(results) {
-        // Vẽ video frame
-        this.canvasCtx.save();
-        this.canvasCtx.clearRect(0, 0, this.canvasElement.width, this.canvasElement.height);
-        this.canvasCtx.drawImage(
-            results.image, 0, 0, 
-            this.canvasElement.width, 
-            this.canvasElement.height
-        );
+        try {
+            // Vẽ video frame
+            this.canvasCtx.save();
+            this.canvasCtx.clearRect(0, 0, this.canvasElement.width, this.canvasElement.height);
+            this.canvasCtx.drawImage(
+                results.image, 0, 0, 
+                this.canvasElement.width, 
+                this.canvasElement.height
+            );
 
-        // Vẽ skeleton nếu có pose
-        if (results.poseLandmarks) {
-            this.currentPose = this.normalizeLandmarks(results.poseLandmarks);
-            this.drawBoundingFrame(results.poseLandmarks, this.canvasCtx);
-            this.drawPose(results.poseLandmarks, this.canvasCtx);
-        } else {
-            this.currentPose = null;
+            // Vẽ skeleton nếu có pose
+            if (results.poseLandmarks) {
+                try {
+                    this.currentPose = this.normalizeLandmarks(results.poseLandmarks);
+                    this.drawBoundingFrame(results.poseLandmarks, this.canvasCtx);
+                    this.drawPose(results.poseLandmarks, this.canvasCtx);
+                } catch (error) {
+                    console.error('Lỗi khi vẽ skeleton:', error);
+                    // Vẫn vẽ skeleton cơ bản nếu có lỗi
+                    this.drawPose(results.poseLandmarks, this.canvasCtx);
+                }
+            } else {
+                this.currentPose = null;
+            }
+
+            this.canvasCtx.restore();
+        } catch (error) {
+            console.error('Lỗi trong onResults:', error);
         }
-
-        this.canvasCtx.restore();
     }
 
     /**
@@ -186,46 +196,61 @@ class PoseDetector {
      * Chuẩn hóa landmarks (scale và center)
      */
     normalizeLandmarks(landmarks) {
-        if (!landmarks || landmarks.length === 0) return null;
+        try {
+            if (!landmarks || landmarks.length === 0) return null;
 
-        // Tìm bounding box
-        let minX = Infinity, maxX = -Infinity;
-        let minY = Infinity, maxY = -Infinity;
+            // Tìm bounding box
+            let minX = Infinity, maxX = -Infinity;
+            let minY = Infinity, maxY = -Infinity;
 
-        landmarks.forEach(landmark => {
-            if ((landmark.visibility ?? 1) > 0.5) {
-                minX = Math.min(minX, landmark.x);
-                maxX = Math.max(maxX, landmark.x);
-                minY = Math.min(minY, landmark.y);
-                maxY = Math.max(maxY, landmark.y);
+            landmarks.forEach(landmark => {
+                if (landmark && typeof landmark.x === 'number' && typeof landmark.y === 'number') {
+                    if ((landmark.visibility ?? 1) > 0.5) {
+                        minX = Math.min(minX, landmark.x);
+                        maxX = Math.max(maxX, landmark.x);
+                        minY = Math.min(minY, landmark.y);
+                        maxY = Math.max(maxY, landmark.y);
+                    }
+                }
+            });
+
+            // Nếu không có điểm đủ visibility, dùng toàn bộ điểm
+            if (!isFinite(minX) || !isFinite(maxX) || !isFinite(minY) || !isFinite(maxY)) {
+                const validLandmarks = landmarks.filter(l => l && typeof l.x === 'number' && typeof l.y === 'number');
+                if (validLandmarks.length === 0) return null;
+                
+                minX = Math.min(...validLandmarks.map(l => l.x));
+                maxX = Math.max(...validLandmarks.map(l => l.x));
+                minY = Math.min(...validLandmarks.map(l => l.y));
+                maxY = Math.max(...validLandmarks.map(l => l.y));
             }
-        });
 
-        // Nếu không có điểm đủ visibility, dùng toàn bộ điểm
-        if (!isFinite(minX) || !isFinite(maxX) || !isFinite(minY) || !isFinite(maxY)) {
-            minX = Math.min(...landmarks.map(l => l.x));
-            maxX = Math.max(...landmarks.map(l => l.x));
-            minY = Math.min(...landmarks.map(l => l.y));
-            maxY = Math.max(...landmarks.map(l => l.y));
+            const width = maxX - minX;
+            const height = maxY - minY;
+            const centerX = (minX + maxX) / 2;
+            const centerY = (minY + maxY) / 2;
+
+            // Chuẩn hóa về tâm (0, 0) và scale
+            const scale = Math.max(width, height, 0.01); // Tối thiểu 0.01 để tránh chia 0
+            if (scale <= 0) return null;
+
+            const normalized = landmarks.map(landmark => {
+                if (!landmark || typeof landmark.x !== 'number' || typeof landmark.y !== 'number') {
+                    return { x: 0, y: 0, z: 0, visibility: 0 };
+                }
+                return {
+                    x: (landmark.x - centerX) / scale,
+                    y: (landmark.y - centerY) / scale,
+                    z: (landmark.z || 0) / scale,
+                    visibility: landmark.visibility ?? 0
+                };
+            });
+
+            return normalized;
+        } catch (error) {
+            console.error('Lỗi trong normalizeLandmarks:', error);
+            return null;
         }
-
-        const width = maxX - minX;
-        const height = maxY - minY;
-        const centerX = (minX + maxX) / 2;
-        const centerY = (minY + maxY) / 2;
-
-        // Chuẩn hóa về tâm (0, 0) và scale
-        const scale = Math.max(width, height);
-        if (scale === 0) return null;
-
-        const normalized = landmarks.map(landmark => ({
-            x: (landmark.x - centerX) / scale,
-            y: (landmark.y - centerY) / scale,
-            z: landmark.z / scale,
-            visibility: landmark.visibility
-        }));
-
-        return normalized;
     }
 
     /**
@@ -294,9 +319,10 @@ class PoseDetector {
      * Trả về similarity score (0-100)
      */
     comparePoses(targetPose) {
-        if (!this.currentPose || !targetPose) {
-            return 0;
-        }
+        try {
+            if (!this.currentPose || !targetPose) {
+                return 0;
+            }
 
         // 1. So sánh góc khớp (quan trọng nhất)
         const anglePairs = [
@@ -431,7 +457,11 @@ class PoseDetector {
             finalScore *= 0.7;
         }
 
-        return Math.round(Math.min(100, finalScore * 100));
+            return Math.round(Math.min(100, finalScore * 100));
+        } catch (error) {
+            console.error('Lỗi trong comparePoses:', error);
+            return 0;
+        }
     }
 
     /**
