@@ -24,6 +24,7 @@
                 <div class="camera-preview-wrapper">
                     <div class="camera-preview">
                         <video id="previewVideo" autoplay playsinline muted></video>
+                        <div class="body-frame body-frame-preview"></div>
                         <div class="camera-status" id="cameraStatus">
                             <span class="status-icon">📹</span>
                             <span class="status-text">Đang tải camera...</span>
@@ -34,7 +35,7 @@
                     </div>
                 </div>
                 
-                <button id="startBtn" class="btn btn-primary">
+                <button id="startBtn" class="btn btn-primary start-btn">
                     <span class="btn-text">Bắt Đầu Game</span>
                     <span class="btn-icon">▶</span>
                 </button>
@@ -80,6 +81,7 @@
                     <div class="video-wrapper">
                         <video id="video" autoplay playsinline></video>
                         <canvas id="outputCanvas"></canvas>
+                        <div class="body-frame body-frame-game"></div>
                         <div id="similarityDisplay" class="similarity-display">
                             <span id="similarityText">0%</span>
                         </div>

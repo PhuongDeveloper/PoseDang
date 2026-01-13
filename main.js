@@ -120,13 +120,6 @@ async function startCameraPreview() {
  */
 async function startGame() {
     try {
-        // Dừng preview video
-        if (previewVideo && previewVideo.srcObject) {
-            const tracks = previewVideo.srcObject.getTracks();
-            tracks.forEach(track => track.stop());
-            previewVideo.srcObject = null;
-        }
-        
         // Chuyển sang màn hình countdown
         showScreen('countdown');
         
@@ -138,6 +131,10 @@ async function startGame() {
         if (window.previewStream) {
             stream = window.previewStream;
             video.srcObject = stream;
+            if (previewVideo) {
+                previewVideo.pause();
+                previewVideo.srcObject = null; // giải phóng phần hiển thị nhưng không stop track
+            }
         } else {
             stream = await navigator.mediaDevices.getUserMedia({
                 video: {

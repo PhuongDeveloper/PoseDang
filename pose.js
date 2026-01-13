@@ -6,10 +6,11 @@
 class PoseDetector {
     constructor() {
         this.pose = null;
-        this.camera = null;
         this.isInitialized = false;
         this.currentPose = null;
         this.targetPose = null;
+        this.isRunning = false;
+        this._rafId = null;
         
         // Canvas elements
         this.videoElement = null;
@@ -70,6 +71,7 @@ class PoseDetector {
         // Vẽ skeleton nếu có pose
         if (results.poseLandmarks) {
             this.currentPose = this.normalizeLandmarks(results.poseLandmarks);
+            this.drawBoundingFrame(results.poseLandmarks, this.canvasCtx);
             this.drawPose(results.poseLandmarks, this.canvasCtx);
         } else {
             this.currentPose = null;
@@ -115,7 +117,7 @@ class PoseDetector {
         // Vẽ keypoints
         ctx.fillStyle = '#ff0000';
         landmarks.forEach((landmark) => {
-            if (landmark.visibility > 0.5) {
+            if ((landmark.visibility ?? 1) > 0.5) {
                 ctx.beginPath();
                 ctx.arc(
                     landmark.x * this.canvasElement.width,
@@ -125,6 +127,59 @@ class PoseDetector {
                 ctx.fill();
             }
         });
+    }
+
+    /**
+     * Vẽ khung bao quanh cơ thể trên camera (bounding frame)
+     */
+    drawBoundingFrame(landmarks, ctx) {
+        if (!landmarks || !landmarks.length) return;
+
+        let minX = Infinity, maxX = -Infinity;
+        let minY = Infinity, maxY = -Infinity;
+
+        landmarks.forEach(lm => {
+            if ((lm.visibility ?? 1) > 0.3) {
+                minX = Math.min(minX, lm.x);
+                maxX = Math.max(maxX, lm.x);
+                minY = Math.min(minY, lm.y);
+                maxY = Math.max(maxY, lm.y);
+            }
+        });
+
+        if (!isFinite(minX) || !isFinite(maxX) || !isFinite(minY) || !isFinite(maxY)) return;
+
+        const padding = 0.08;
+        minX = Math.max(0, minX - padding);
+        maxX = Math.min(1, maxX + padding);
+        minY = Math.max(0, minY - padding);
+        maxY = Math.min(1, maxY + padding);
+
+        const x = minX * this.canvasElement.width;
+        const y = minY * this.canvasElement.height;
+        const w = (maxX - minX) * this.canvasElement.width;
+        const h = (maxY - minY) * this.canvasElement.height;
+
+        const radius = 20;
+
+        ctx.save();
+        ctx.strokeStyle = 'rgba(74, 222, 128, 0.9)';
+        ctx.lineWidth = 4;
+        ctx.setLineDash([12, 8]);
+
+        ctx.beginPath();
+        ctx.moveTo(x + radius, y);
+        ctx.lineTo(x + w - radius, y);
+        ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+        ctx.lineTo(x + w, y + h - radius);
+        ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+        ctx.lineTo(x + radius, y + h);
+        ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+        ctx.lineTo(x, y + radius);
+        ctx.quadraticCurveTo(x, y, x + radius, y);
+        ctx.stroke();
+
+        ctx.restore();
     }
 
     /**
@@ -138,13 +193,21 @@ class PoseDetector {
         let minY = Infinity, maxY = -Infinity;
 
         landmarks.forEach(landmark => {
-            if (landmark.visibility > 0.5) {
+            if ((landmark.visibility ?? 1) > 0.5) {
                 minX = Math.min(minX, landmark.x);
                 maxX = Math.max(maxX, landmark.x);
                 minY = Math.min(minY, landmark.y);
                 maxY = Math.max(maxY, landmark.y);
             }
         });
+
+        // Nếu không có điểm đủ visibility, dùng toàn bộ điểm
+        if (!isFinite(minX) || !isFinite(maxX) || !isFinite(minY) || !isFinite(maxY)) {
+            minX = Math.min(...landmarks.map(l => l.x));
+            maxX = Math.max(...landmarks.map(l => l.x));
+            minY = Math.min(...landmarks.map(l => l.y));
+            maxY = Math.max(...landmarks.map(l => l.y));
+        }
 
         const width = maxX - minX;
         const height = maxY - minY;
@@ -173,28 +236,55 @@ class PoseDetector {
             throw new Error('PoseDetector chưa được khởi tạo');
         }
 
-        if (typeof Camera === 'undefined') {
-            throw new Error('MediaPipe Camera chưa được load. Vui lòng kiểm tra kết nối internet.');
+        // Nếu chưa có stream, xin quyền camera
+        if (!this.videoElement.srcObject) {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: {
+                    width: { ideal: 640 },
+                    height: { ideal: 480 },
+                    facingMode: 'user'
+                }
+            });
+            this.videoElement.srcObject = stream;
         }
 
-        this.camera = new Camera(this.videoElement, {
-            onFrame: async () => {
-                await this.pose.send({ image: this.videoElement });
-            },
-            width: 640,
-            height: 480
+        // Đảm bảo video đã sẵn sàng
+        await new Promise((resolve) => {
+            if (this.videoElement.readyState >= 2) {
+                resolve();
+            } else {
+                this.videoElement.onloadedmetadata = resolve;
+            }
         });
 
-        await this.camera.start();
+        this.isRunning = true;
+
+        const processFrame = async () => {
+            if (!this.isRunning) return;
+
+            if (this.videoElement.readyState >= this.videoElement.HAVE_ENOUGH_DATA) {
+                await this.pose.send({ image: this.videoElement });
+            }
+            this._rafId = requestAnimationFrame(processFrame);
+        };
+
+        processFrame();
     }
 
     /**
      * Dừng camera
      */
     stopCamera() {
-        if (this.camera) {
-            this.camera.stop();
-            this.camera = null;
+        this.isRunning = false;
+        if (this._rafId) {
+            cancelAnimationFrame(this._rafId);
+            this._rafId = null;
+        }
+
+        if (this.videoElement && this.videoElement.srcObject) {
+            const tracks = this.videoElement.srcObject.getTracks();
+            tracks.forEach(track => track.stop());
+            this.videoElement.srcObject = null;
         }
     }
 
@@ -207,7 +297,7 @@ class PoseDetector {
             return 0;
         }
 
-        // Các keypoints quan trọng để so sánh
+        // Các keypoints quan trọng để so sánh vị trí
         const importantIndices = [
             0,   // nose
             11, 12, // shoulders
@@ -218,36 +308,90 @@ class PoseDetector {
             27, 28  // ankles
         ];
 
-        let totalSimilarity = 0;
-        let validPoints = 0;
+        let positionSimilarity = 0;
+        let positionCount = 0;
 
         importantIndices.forEach(index => {
             const current = this.currentPose[index];
             const target = targetPose[index];
 
-            if (current && target && 
-                current.visibility > 0.5 && 
-                target.visibility > 0.5) {
+            if (current && target &&
+                (current.visibility ?? 1) > 0.2 &&
+                (target.visibility ?? 1) > 0.2) {
                 
-                // Tính khoảng cách Euclidean
+                // Tính khoảng cách Euclidean trên không gian đã chuẩn hóa
                 const dx = current.x - target.x;
                 const dy = current.y - target.y;
                 const dz = (current.z || 0) - (target.z || 0);
                 const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
-                // Chuyển đổi distance thành similarity (0-1)
-                // Distance càng nhỏ thì similarity càng cao
-                const similarity = Math.max(0, 1 - distance * 2);
-                totalSimilarity += similarity;
-                validPoints++;
+                // Distance càng nhỏ càng tốt
+                const similarity = Math.max(0, 1 - distance * 1.5);
+                positionSimilarity += similarity;
+                positionCount++;
             }
         });
 
-        if (validPoints === 0) return 0;
+        // So sánh góc khớp để tăng độ chính xác
+        const anglePairs = [
+            [11, 13, 15], // left elbow
+            [12, 14, 16], // right elbow
+            [23, 25, 27], // left knee
+            [24, 26, 28], // right knee
+            [11, 23, 25], // left hip-knee alignment
+            [12, 24, 26]  // right hip-knee alignment
+        ];
 
-        // Tính trung bình và chuyển sang phần trăm
-        const avgSimilarity = totalSimilarity / validPoints;
-        return Math.round(avgSimilarity * 100);
+        let angleSimilarity = 0;
+        let angleCount = 0;
+
+        anglePairs.forEach(([a, b, c]) => {
+            const ca = this.currentPose[a];
+            const cb = this.currentPose[b];
+            const cc = this.currentPose[c];
+            const ta = targetPose[a];
+            const tb = targetPose[b];
+            const tc = targetPose[c];
+
+            if (ca && cb && cc && ta && tb && tc &&
+                (ca.visibility ?? 1) > 0.2 &&
+                (cb.visibility ?? 1) > 0.2 &&
+                (cc.visibility ?? 1) > 0.2 &&
+                (ta.visibility ?? 1) > 0.2 &&
+                (tb.visibility ?? 1) > 0.2 &&
+                (tc.visibility ?? 1) > 0.2) {
+                
+                const currentAngle = this.computeAngle(ca, cb, cc);
+                const targetAngle = this.computeAngle(ta, tb, tc);
+                const diff = Math.abs(currentAngle - targetAngle);
+
+                // Góc sai lệch càng nhỏ càng tốt
+                const similarity = Math.max(0, 1 - (diff / 90)); // 90 độ lệch là 0
+                angleSimilarity += similarity;
+                angleCount++;
+            }
+        });
+
+        const posScore = positionCount ? (positionSimilarity / positionCount) : 0;
+        const angleScore = angleCount ? (angleSimilarity / angleCount) : 0;
+
+        // Kết hợp: ưu tiên vị trí 60%, góc 40%
+        const finalScore = posScore * 0.6 + angleScore * 0.4;
+        return Math.round(finalScore * 100);
+    }
+
+    /**
+     * Tính góc giữa 3 điểm (b-a-c) trả về độ (0-180)
+     */
+    computeAngle(a, b, c) {
+        const ab = { x: a.x - b.x, y: a.y - b.y };
+        const cb = { x: c.x - b.x, y: c.y - b.y };
+        const dot = ab.x * cb.x + ab.y * cb.y;
+        const magAB = Math.sqrt(ab.x * ab.x + ab.y * ab.y);
+        const magCB = Math.sqrt(cb.x * cb.x + cb.y * cb.y);
+        if (magAB === 0 || magCB === 0) return 180;
+        const cos = Math.min(1, Math.max(-1, dot / (magAB * magCB)));
+        return Math.acos(cos) * (180 / Math.PI);
     }
 
     /**
