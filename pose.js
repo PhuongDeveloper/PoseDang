@@ -290,6 +290,7 @@ class PoseDetector {
 
     /**
      * So sánh pose hiện tại với pose mục tiêu
+     * Cải thiện độ chính xác: so sánh góc, tỷ lệ xương, và vị trí tương đối
      * Trả về similarity score (0-100)
      */
     comparePoses(targetPose) {
@@ -297,49 +298,14 @@ class PoseDetector {
             return 0;
         }
 
-        // Các keypoints quan trọng để so sánh vị trí
-        const importantIndices = [
-            0,   // nose
-            11, 12, // shoulders
-            13, 14, // elbows
-            15, 16, // wrists
-            23, 24, // hips
-            25, 26, // knees
-            27, 28  // ankles
-        ];
-
-        let positionSimilarity = 0;
-        let positionCount = 0;
-
-        importantIndices.forEach(index => {
-            const current = this.currentPose[index];
-            const target = targetPose[index];
-
-            if (current && target &&
-                (current.visibility ?? 1) > 0.2 &&
-                (target.visibility ?? 1) > 0.2) {
-                
-                // Tính khoảng cách Euclidean trên không gian đã chuẩn hóa
-                const dx = current.x - target.x;
-                const dy = current.y - target.y;
-                const dz = (current.z || 0) - (target.z || 0);
-                const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-
-                // Distance càng nhỏ càng tốt
-                const similarity = Math.max(0, 1 - distance * 1.5);
-                positionSimilarity += similarity;
-                positionCount++;
-            }
-        });
-
-        // So sánh góc khớp để tăng độ chính xác
+        // 1. So sánh góc khớp (quan trọng nhất)
         const anglePairs = [
             [11, 13, 15], // left elbow
             [12, 14, 16], // right elbow
             [23, 25, 27], // left knee
             [24, 26, 28], // right knee
-            [11, 23, 25], // left hip-knee alignment
-            [12, 24, 26]  // right hip-knee alignment
+            [13, 11, 23], // left shoulder-hip alignment
+            [14, 12, 24], // right shoulder-hip alignment
         ];
 
         let angleSimilarity = 0;
@@ -363,21 +329,109 @@ class PoseDetector {
                 
                 const currentAngle = this.computeAngle(ca, cb, cc);
                 const targetAngle = this.computeAngle(ta, tb, tc);
-                const diff = Math.abs(currentAngle - targetAngle);
+                let diff = Math.abs(currentAngle - targetAngle);
+                
+                // Xử lý góc vòng tròn (ví dụ: 350° và 10° chỉ lệch 20°)
+                if (diff > 180) diff = 360 - diff;
 
-                // Góc sai lệch càng nhỏ càng tốt
-                const similarity = Math.max(0, 1 - (diff / 90)); // 90 độ lệch là 0
+                // Cho phép sai lệch hợp lý (90 độ lệch là 0, nhưng tính toán mềm mại hơn)
+                // Sử dụng hàm exponential để điểm giảm chậm hơn khi gần đúng
+                const similarity = Math.max(0, Math.pow(1 - (diff / 90), 1.5));
                 angleSimilarity += similarity;
                 angleCount++;
             }
         });
 
-        const posScore = positionCount ? (positionSimilarity / positionCount) : 0;
-        const angleScore = angleCount ? (angleSimilarity / angleCount) : 0;
+        // 2. So sánh tỷ lệ chiều dài các đoạn xương
+        const bonePairs = [
+            [11, 13], [13, 15], // left arm
+            [12, 14], [14, 16], // right arm
+            [23, 25], [25, 27], // left leg
+            [24, 26], [26, 28], // right leg
+            [11, 12], [23, 24]  // shoulders, hips
+        ];
 
-        // Kết hợp: ưu tiên vị trí 60%, góc 40%
-        const finalScore = posScore * 0.6 + angleScore * 0.4;
-        return Math.round(finalScore * 100);
+        let boneSimilarity = 0;
+        let boneCount = 0;
+
+        bonePairs.forEach(([a, b]) => {
+            const ca = this.currentPose[a];
+            const cb = this.currentPose[b];
+            const ta = targetPose[a];
+            const tb = targetPose[b];
+
+            if (ca && cb && ta && tb &&
+                (ca.visibility ?? 1) > 0.2 &&
+                (cb.visibility ?? 1) > 0.2 &&
+                (ta.visibility ?? 1) > 0.2 &&
+                (tb.visibility ?? 1) > 0.2) {
+                
+                // Tính tỷ lệ chiều dài
+                const currentLen = Math.sqrt(
+                    Math.pow(ca.x - cb.x, 2) + Math.pow(ca.y - cb.y, 2)
+                );
+                const targetLen = Math.sqrt(
+                    Math.pow(ta.x - tb.x, 2) + Math.pow(ta.y - tb.y, 2)
+                );
+
+                if (targetLen > 0 && currentLen > 0) {
+                    const ratio = Math.min(currentLen, targetLen) / Math.max(currentLen, targetLen);
+                    // Tăng trọng số cho tỷ lệ gần 1
+                    const weightedRatio = Math.pow(ratio, 0.8);
+                    boneSimilarity += weightedRatio;
+                    boneCount++;
+                }
+            }
+        });
+
+        // 3. So sánh vị trí tương đối của các điểm quan trọng (sau khi normalize)
+        const importantIndices = [11, 12, 13, 14, 15, 16, 23, 24, 25, 26, 27, 28];
+        let positionSimilarity = 0;
+        let positionCount = 0;
+
+        importantIndices.forEach(index => {
+            const current = this.currentPose[index];
+            const target = targetPose[index];
+
+            if (current && target &&
+                (current.visibility ?? 1) > 0.2 &&
+                (target.visibility ?? 1) > 0.2) {
+                
+                // Tính khoảng cách trên không gian đã chuẩn hóa
+                const dx = current.x - target.x;
+                const dy = current.y - target.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+
+                // Cho phép sai lệch hợp lý (distance 0.3 là 0 điểm)
+                // Sử dụng hàm mũ để điểm giảm chậm hơn khi gần đúng
+                const similarity = Math.max(0, Math.pow(1 - (distance / 0.3), 1.2));
+                positionSimilarity += similarity;
+                positionCount++;
+            }
+        });
+
+        // Tính điểm từng phần
+        const angleScore = angleCount > 0 ? (angleSimilarity / angleCount) : 0;
+        const boneScore = boneCount > 0 ? (boneSimilarity / boneCount) : 0;
+        const positionScore = positionCount > 0 ? (positionSimilarity / positionCount) : 0;
+
+        // Kết hợp với trọng số: góc 50%, tỷ lệ xương 30%, vị trí 20%
+        // Góc quan trọng nhất vì nó phản ánh đúng tư thế
+        let finalScore = angleScore * 0.5 + boneScore * 0.3 + positionScore * 0.2;
+
+        // Nếu có đủ điểm để so sánh, tính điểm chính xác hơn
+        if (angleCount >= 4 && boneCount >= 6 && positionCount >= 8) {
+            // Điểm đầy đủ, không cần điều chỉnh
+        } else if (angleCount >= 2 && boneCount >= 4) {
+            // Thiếu một số điểm nhưng vẫn đủ để đánh giá
+            // Giảm nhẹ điểm để tránh false positive
+            finalScore *= 0.95;
+        } else {
+            // Thiếu quá nhiều điểm, điểm thấp
+            finalScore *= 0.7;
+        }
+
+        return Math.round(Math.min(100, finalScore * 100));
     }
 
     /**
@@ -399,7 +453,7 @@ class PoseDetector {
      * Trả về normalized landmarks
      */
     generateRandomPose() {
-        // Danh sách các pose mẫu (normalized landmarks)
+        // Danh sách các pose mẫu (normalized landmarks) - Tăng từ 5 lên 15 pose
         const poseTemplates = [
             // Pose 1: Tư thế đứng thẳng, tay giơ cao
             this.createPoseTemplate({
@@ -445,6 +499,96 @@ class PoseDetector {
                 hips: { y: 0.1, x: -0.1, x2: 0.1 },
                 knees: { y: 0.3, x: -0.1, x2: 0.15 },
                 ankles: { y: 0.5, x: -0.1, x2: 0.2 }
+            }),
+            // Pose 6: Tư thế tay chéo trước ngực
+            this.createPoseTemplate({
+                shoulders: { y: -0.3, x: -0.15, x2: 0.15 },
+                elbows: { y: -0.25, x: 0.05, x2: -0.05 },
+                wrists: { y: -0.2, x: 0.2, x2: -0.2 },
+                hips: { y: 0.1, x: -0.1, x2: 0.1 },
+                knees: { y: 0.3, x: -0.1, x2: 0.1 },
+                ankles: { y: 0.5, x: -0.1, x2: 0.1 }
+            }),
+            // Pose 7: Tư thế tay dang ngang, một chân giơ
+            this.createPoseTemplate({
+                shoulders: { y: -0.3, x: -0.3, x2: 0.3 },
+                elbows: { y: -0.3, x: -0.4, x2: 0.4 },
+                wrists: { y: -0.3, x: -0.5, x2: 0.5 },
+                hips: { y: 0.1, x: -0.1, x2: 0.1 },
+                knees: { y: 0.3, x: -0.1, x2: 0.2 },
+                ankles: { y: 0.5, x: -0.1, x2: 0.3 }
+            }),
+            // Pose 8: Tư thế squat nhẹ, tay giơ cao
+            this.createPoseTemplate({
+                shoulders: { y: -0.25, x: -0.15, x2: 0.15 },
+                elbows: { y: -0.45, x: -0.2, x2: 0.2 },
+                wrists: { y: -0.65, x: -0.2, x2: 0.2 },
+                hips: { y: 0.15, x: -0.1, x2: 0.1 },
+                knees: { y: 0.35, x: -0.1, x2: 0.1 },
+                ankles: { y: 0.5, x: -0.1, x2: 0.1 }
+            }),
+            // Pose 9: Tư thế một tay giơ, một tay chống hông
+            this.createPoseTemplate({
+                shoulders: { y: -0.3, x: -0.15, x2: 0.15 },
+                elbows: { y: -0.5, x: -0.2, x2: 0.25 },
+                wrists: { y: -0.7, x: -0.2, x2: 0.3 },
+                hips: { y: 0.1, x: -0.1, x2: 0.1 },
+                knees: { y: 0.3, x: -0.1, x2: 0.1 },
+                ankles: { y: 0.5, x: -0.1, x2: 0.1 }
+            }),
+            // Pose 10: Tư thế tay chéo trên đầu
+            this.createPoseTemplate({
+                shoulders: { y: -0.3, x: -0.15, x2: 0.15 },
+                elbows: { y: -0.45, x: -0.1, x2: 0.1 },
+                wrists: { y: -0.6, x: 0.05, x2: -0.05 },
+                hips: { y: 0.1, x: -0.1, x2: 0.1 },
+                knees: { y: 0.3, x: -0.1, x2: 0.1 },
+                ankles: { y: 0.5, x: -0.1, x2: 0.1 }
+            }),
+            // Pose 11: Tư thế tay dang rộng, chân rộng
+            this.createPoseTemplate({
+                shoulders: { y: -0.3, x: -0.3, x2: 0.3 },
+                elbows: { y: -0.3, x: -0.4, x2: 0.4 },
+                wrists: { y: -0.3, x: -0.5, x2: 0.5 },
+                hips: { y: 0.1, x: -0.2, x2: 0.2 },
+                knees: { y: 0.3, x: -0.25, x2: 0.25 },
+                ankles: { y: 0.5, x: -0.25, x2: 0.25 }
+            }),
+            // Pose 12: Tư thế một tay giơ, chân rộng
+            this.createPoseTemplate({
+                shoulders: { y: -0.3, x: -0.15, x2: 0.15 },
+                elbows: { y: -0.5, x: -0.2, x2: 0.1 },
+                wrists: { y: -0.7, x: -0.2, x2: 0.05 },
+                hips: { y: 0.1, x: -0.15, x2: 0.15 },
+                knees: { y: 0.3, x: -0.2, x2: 0.2 },
+                ankles: { y: 0.5, x: -0.2, x2: 0.2 }
+            }),
+            // Pose 13: Tư thế tay chéo dưới
+            this.createPoseTemplate({
+                shoulders: { y: -0.3, x: -0.15, x2: 0.15 },
+                elbows: { y: -0.15, x: -0.05, x2: 0.05 },
+                wrists: { y: 0, x: 0.1, x2: -0.1 },
+                hips: { y: 0.1, x: -0.1, x2: 0.1 },
+                knees: { y: 0.3, x: -0.1, x2: 0.1 },
+                ankles: { y: 0.5, x: -0.1, x2: 0.1 }
+            }),
+            // Pose 14: Tư thế tay giơ cao, một chân giơ
+            this.createPoseTemplate({
+                shoulders: { y: -0.3, x: -0.15, x2: 0.15 },
+                elbows: { y: -0.5, x: -0.2, x2: 0.2 },
+                wrists: { y: -0.7, x: -0.2, x2: 0.2 },
+                hips: { y: 0.1, x: -0.1, x2: 0.1 },
+                knees: { y: 0.3, x: -0.1, x2: 0.25 },
+                ankles: { y: 0.5, x: -0.1, x2: 0.35 }
+            }),
+            // Pose 15: Tư thế tay dang ngang, một chân co
+            this.createPoseTemplate({
+                shoulders: { y: -0.3, x: -0.3, x2: 0.3 },
+                elbows: { y: -0.3, x: -0.4, x2: 0.4 },
+                wrists: { y: -0.3, x: -0.5, x2: 0.5 },
+                hips: { y: 0.1, x: -0.1, x2: 0.1 },
+                knees: { y: 0.3, x: -0.1, x2: 0.25 },
+                ankles: { y: 0.5, x: -0.1, x2: 0.4 }
             })
         ];
 

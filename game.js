@@ -31,8 +31,11 @@ class Game {
         this.onRoundUpdate = null;
         this.onProgressUpdate = null;
         this.onSimilarityUpdate = null;
+        this.onTimeRemainingUpdate = null;
         this.onGameOver = null;
         this.onRoundComplete = null;
+        this.onScoreGain = null;
+        this.onLifeLost = null;
         
         // Pose canvas
         this.poseCanvas = null;
@@ -112,6 +115,12 @@ class Game {
             this.onProgressUpdate(1 - this.wallProgress);
         }
 
+        // Update time remaining
+        if (this.onTimeRemainingUpdate) {
+            const remaining = Math.max(0, this.getWallDuration() - elapsed);
+            this.onTimeRemainingUpdate(Math.ceil(remaining / 1000));
+        }
+
         // Khi tường đến (100%)
         if (this.wallProgress >= 1) {
             if (!this.hasCheckedPose) {
@@ -166,7 +175,10 @@ class Game {
             this.round++;
             this.updateUI();
             
-            // Callback
+            // Callback cho hiệu ứng
+            if (this.onScoreGain) {
+                this.onScoreGain(this.score);
+            }
             if (this.onRoundComplete) {
                 this.onRoundComplete(true, similarity);
             }
@@ -176,13 +188,16 @@ class Game {
                 if (this.isPlaying) {
                     this.startRound();
                 }
-            }, 1500);
+            }, 2000);
         } else {
             // FAIL
             this.lives--;
             this.updateUI();
             
-            // Callback
+            // Callback cho hiệu ứng
+            if (this.onLifeLost) {
+                this.onLifeLost(this.lives);
+            }
             if (this.onRoundComplete) {
                 this.onRoundComplete(false, similarity);
             }
@@ -196,7 +211,7 @@ class Game {
                     if (this.isPlaying) {
                         this.startRound();
                     }
-                }, 2000);
+                }, 2500);
             }
         }
     }

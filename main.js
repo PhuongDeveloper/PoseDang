@@ -31,6 +31,12 @@ const scoreElement = document.getElementById('score');
 const roundElement = document.getElementById('round');
 const livesElement = document.getElementById('lives');
 const finalScoreElement = document.getElementById('finalScore');
+const timerElement = document.getElementById('timer');
+const scorePopup = document.getElementById('scorePopup');
+const lifeLostPopup = document.getElementById('lifeLostPopup');
+const roundChangePopup = document.getElementById('roundChangePopup');
+const roundChangeNumber = document.getElementById('roundChangeNumber');
+const effectOverlay = document.getElementById('effectOverlay');
 
 /**
  * Khởi tạo ứng dụng
@@ -235,6 +241,30 @@ function setupGameCallbacks() {
         progressBar.style.width = `${progress * 100}%`;
     };
     
+    // Time remaining update
+    game.onTimeRemainingUpdate = (seconds) => {
+        if (timerElement) {
+            timerElement.textContent = seconds;
+            // Đổi màu khi sắp hết thời gian
+            timerElement.classList.remove('warning', 'danger');
+            if (seconds <= 2) {
+                timerElement.classList.add('danger');
+            } else if (seconds <= 3) {
+                timerElement.classList.add('warning');
+            }
+        }
+    };
+    
+    // Score gain effect
+    game.onScoreGain = (newScore) => {
+        showScorePopup();
+    };
+    
+    // Life lost effect
+    game.onLifeLost = (remainingLives) => {
+        showLifeLostPopup();
+    };
+    
     // Similarity update (real-time)
     game.onSimilarityUpdate = (similarity) => {
         if (similarityText && similarityDisplay) {
@@ -255,6 +285,7 @@ function setupGameCallbacks() {
         if (passed) {
             playPassSound();
             createConfetti();
+            showRoundChangeEffect(game.round);
         } else {
             playFailSound();
             shakeScreen();
@@ -420,6 +451,68 @@ function playFailSound() {
     } catch (error) {
         console.log('Không thể phát âm thanh:', error);
     }
+}
+
+/**
+ * Hiệu ứng cộng điểm
+ */
+function showScorePopup() {
+    if (!scorePopup) return;
+    
+    scorePopup.classList.remove('show');
+    void scorePopup.offsetWidth; // Trigger reflow
+    scorePopup.classList.add('show');
+    
+    setTimeout(() => {
+        scorePopup.classList.remove('show');
+    }, 1500);
+}
+
+/**
+ * Hiệu ứng mất mạng
+ */
+function showLifeLostPopup() {
+    if (!lifeLostPopup) return;
+    
+    lifeLostPopup.classList.remove('show');
+    void lifeLostPopup.offsetWidth;
+    lifeLostPopup.classList.add('show');
+    
+    // Flash effect đỏ
+    if (effectOverlay) {
+        effectOverlay.classList.add('flash-red');
+        setTimeout(() => {
+            effectOverlay.classList.remove('flash-red');
+        }, 500);
+    }
+    
+    setTimeout(() => {
+        lifeLostPopup.classList.remove('show');
+    }, 2000);
+}
+
+/**
+ * Hiệu ứng chuyển round
+ */
+function showRoundChangeEffect(roundNumber) {
+    if (!roundChangePopup || !roundChangeNumber) return;
+    
+    roundChangeNumber.textContent = roundNumber;
+    roundChangePopup.classList.remove('show');
+    void roundChangePopup.offsetWidth;
+    roundChangePopup.classList.add('show');
+    
+    // Flash effect
+    if (effectOverlay) {
+        effectOverlay.classList.add('flash-green');
+        setTimeout(() => {
+            effectOverlay.classList.remove('flash-green');
+        }, 500);
+    }
+    
+    setTimeout(() => {
+        roundChangePopup.classList.remove('show');
+    }, 2000);
 }
 
 // Khởi tạo khi DOM ready

@@ -72,6 +72,10 @@
                     <span class="label">Round:</span>
                     <span id="round" class="round">1</span>
                 </div>
+                <div class="timer-container">
+                    <span class="label">⏱️</span>
+                    <span id="timer" class="timer">5</span>
+                </div>
             </div>
 
             <!-- Main Game Area -->
@@ -121,6 +125,12 @@
 
     <!-- Confetti Container -->
     <div id="confettiContainer"></div>
+    
+    <!-- Effect Overlays -->
+    <div id="effectOverlay" class="effect-overlay"></div>
+    <div id="scorePopup" class="score-popup">+1</div>
+    <div id="lifeLostPopup" class="life-lost-popup">-1 ❤️</div>
+    <div id="roundChangePopup" class="round-change-popup">Round <span id="roundChangeNumber">1</span></div>
 
     <!-- Scripts -->
     <script src="pose.js"></script>
