@@ -792,97 +792,127 @@ class PoseDetector {
      * Trả về normalized landmarks
      */
     generateRandomPose() {
-        // Danh sách các pose mẫu tập trung vào CHÂN - dễ nhận diện hơn
+        // DANH SÁCH POSE MỚI - ĐỘC LẠ, GÓC LỚN, DỄ XÁC MINH
+        // Tất cả đều có góc lớn để tránh trùng với đứng thẳng
         const poseTemplates = [
-            // Pose 1: Chân rộng, tay giơ cao (dễ)
+            // Pose 1: TAY GIƠ CAO HẾT CỠ, CHÂN RỘNG HẾT CỠ (Superman pose)
             this.createPoseTemplate({
                 shoulders: { y: -0.3, x: -0.15, x2: 0.15 },
-                elbows: { y: -0.5, x: -0.2, x2: 0.2 },
-                wrists: { y: -0.7, x: -0.2, x2: 0.2 },
-                hips: { y: 0.1, x: -0.2, x2: 0.2 },
-                knees: { y: 0.3, x: -0.25, x2: 0.25 },
-                ankles: { y: 0.5, x: -0.25, x2: 0.25 }
+                elbows: { y: -0.6, x: -0.2, x2: 0.2 },
+                wrists: { y: -0.85, x: -0.2, x2: 0.2 }, // Tay giơ rất cao
+                hips: { y: 0.1, x: -0.25, x2: 0.25 }, // Chân rất rộng
+                knees: { y: 0.3, x: -0.3, x2: 0.3 },
+                ankles: { y: 0.5, x: -0.3, x2: 0.3 }
             }),
-            // Pose 2: Một chân giơ cao, tay giơ cao (rất dễ nhận diện)
+            
+            // Pose 2: MỘT CHÂN GIƠ CAO VỀ TRƯỚC, TAY GIƠ CAO (High kick)
             this.createPoseTemplate({
                 shoulders: { y: -0.3, x: -0.15, x2: 0.15 },
-                elbows: { y: -0.5, x: -0.2, x2: 0.2 },
-                wrists: { y: -0.7, x: -0.2, x2: 0.2 },
+                elbows: { y: -0.6, x: -0.2, x2: 0.2 },
+                wrists: { y: -0.8, x: -0.2, x2: 0.2 },
                 hips: { y: 0.1, x: -0.1, x2: 0.1 },
-                knees: { y: 0.3, x: -0.1, x2: 0.3 },
-                ankles: { y: 0.5, x: -0.1, x2: 0.45 }
+                knees: { y: 0.3, x: -0.1, x2: 0.4 }, // Chân phải co cao
+                ankles: { y: 0.5, x: -0.1, x2: 0.55 } // Mắt cá chân phải rất cao
             }),
-            // Pose 3: Squat sâu, tay giơ cao (dễ nhận diện)
+            
+            // Pose 3: SQUAT SÂU + TAY GIƠ CAO HẾT CỠ (Deep squat arms up)
             this.createPoseTemplate({
-                shoulders: { y: -0.2, x: -0.15, x2: 0.15 },
-                elbows: { y: -0.4, x: -0.2, x2: 0.2 },
-                wrists: { y: -0.6, x: -0.2, x2: 0.2 },
-                hips: { y: 0.2, x: -0.1, x2: 0.1 },
-                knees: { y: 0.4, x: -0.1, x2: 0.1 },
+                shoulders: { y: -0.15, x: -0.15, x2: 0.15 }, // Người thấp xuống
+                elbows: { y: -0.5, x: -0.2, x2: 0.2 },
+                wrists: { y: -0.75, x: -0.2, x2: 0.2 }, // Tay giơ rất cao
+                hips: { y: 0.25, x: -0.1, x2: 0.1 }, // Hông thấp
+                knees: { y: 0.45, x: -0.1, x2: 0.1 }, // Đầu gối thấp
                 ankles: { y: 0.5, x: -0.1, x2: 0.1 }
             }),
-            // Pose 4: Chân rộng, một chân co, tay dang ngang (dễ)
+            
+            // Pose 4: TAY DANG NGANG HẾT CỠ + CHÂN RỘNG + MỘT CHÂN CO (Warrior pose)
             this.createPoseTemplate({
-                shoulders: { y: -0.3, x: -0.3, x2: 0.3 },
-                elbows: { y: -0.3, x: -0.4, x2: 0.4 },
-                wrists: { y: -0.3, x: -0.5, x2: 0.5 },
-                hips: { y: 0.1, x: -0.15, x2: 0.15 },
-                knees: { y: 0.3, x: -0.2, x2: 0.3 },
-                ankles: { y: 0.5, x: -0.2, x2: 0.45 }
-            }),
-            // Pose 5: Lunge (chân trước sau), tay giơ cao (rất dễ)
-            this.createPoseTemplate({
-                shoulders: { y: -0.3, x: -0.15, x2: 0.15 },
-                elbows: { y: -0.5, x: -0.2, x2: 0.2 },
-                wrists: { y: -0.7, x: -0.2, x2: 0.2 },
-                hips: { y: 0.1, x: -0.15, x2: 0.15 },
-                knees: { y: 0.3, x: -0.25, x2: 0.15 },
-                ankles: { y: 0.5, x: -0.3, x2: 0.1 }
-            }),
-            // Pose 6: Chân rộng, một chân giơ ngang, tay giơ cao
-            this.createPoseTemplate({
-                shoulders: { y: -0.3, x: -0.15, x2: 0.15 },
-                elbows: { y: -0.5, x: -0.2, x2: 0.2 },
-                wrists: { y: -0.7, x: -0.2, x2: 0.2 },
-                hips: { y: 0.1, x: -0.15, x2: 0.15 },
-                knees: { y: 0.3, x: -0.2, x2: 0.25 },
-                ankles: { y: 0.5, x: -0.2, x2: 0.4 }
-            }),
-            // Pose 7: Một chân giơ cao về phía sau, tay dang ngang
-            this.createPoseTemplate({
-                shoulders: { y: -0.3, x: -0.3, x2: 0.3 },
-                elbows: { y: -0.3, x: -0.4, x2: 0.4 },
-                wrists: { y: -0.3, x: -0.5, x2: 0.5 },
-                hips: { y: 0.1, x: -0.1, x2: 0.1 },
-                knees: { y: 0.3, x: -0.1, x2: 0.25 },
-                ankles: { y: 0.5, x: -0.1, x2: 0.35 }
-            }),
-            // Pose 8: Chân rộng, squat nhẹ, tay dang ngang
-            this.createPoseTemplate({
-                shoulders: { y: -0.25, x: -0.3, x2: 0.3 },
-                elbows: { y: -0.25, x: -0.4, x2: 0.4 },
-                wrists: { y: -0.25, x: -0.5, x2: 0.5 },
-                hips: { y: 0.15, x: -0.2, x2: 0.2 },
-                knees: { y: 0.35, x: -0.25, x2: 0.25 },
-                ankles: { y: 0.5, x: -0.25, x2: 0.25 }
-            }),
-            // Pose 9: Một chân giơ cao, một chân co, tay giơ cao
-            this.createPoseTemplate({
-                shoulders: { y: -0.3, x: -0.15, x2: 0.15 },
-                elbows: { y: -0.5, x: -0.2, x2: 0.2 },
-                wrists: { y: -0.7, x: -0.2, x2: 0.2 },
-                hips: { y: 0.1, x: -0.1, x2: 0.1 },
-                knees: { y: 0.3, x: -0.15, x2: 0.3 },
-                ankles: { y: 0.5, x: -0.15, x2: 0.45 }
-            }),
-            // Pose 10: Chân rộng, một chân co cao, tay giơ cao
-            this.createPoseTemplate({
-                shoulders: { y: -0.3, x: -0.15, x2: 0.15 },
-                elbows: { y: -0.5, x: -0.2, x2: 0.2 },
-                wrists: { y: -0.7, x: -0.2, x2: 0.2 },
+                shoulders: { y: -0.3, x: -0.35, x2: 0.35 }, // Tay dang rất rộng
+                elbows: { y: -0.3, x: -0.45, x2: 0.45 },
+                wrists: { y: -0.3, x: -0.55, x2: 0.55 }, // Cổ tay dang rất rộng
                 hips: { y: 0.1, x: -0.2, x2: 0.2 },
-                knees: { y: 0.3, x: -0.25, x2: 0.35 },
+                knees: { y: 0.3, x: -0.25, x2: 0.35 }, // Chân phải co
                 ankles: { y: 0.5, x: -0.25, x2: 0.5 }
+            }),
+            
+            // Pose 5: LUNGE SÂU + TAY GIƠ CAO (Deep lunge)
+            this.createPoseTemplate({
+                shoulders: { y: -0.3, x: -0.15, x2: 0.15 },
+                elbows: { y: -0.6, x: -0.2, x2: 0.2 },
+                wrists: { y: -0.8, x: -0.2, x2: 0.2 },
+                hips: { y: 0.1, x: -0.2, x2: 0.2 },
+                knees: { y: 0.3, x: -0.35, x2: 0.15 }, // Chân trái rất xa về trước
+                ankles: { y: 0.5, x: -0.4, x2: 0.1 } // Mắt cá chân trái rất xa
+            }),
+            
+            // Pose 6: MỘT CHÂN GIƠ NGANG + TAY GIƠ CAO (Side kick pose)
+            this.createPoseTemplate({
+                shoulders: { y: -0.3, x: -0.15, x2: 0.15 },
+                elbows: { y: -0.6, x: -0.2, x2: 0.2 },
+                wrists: { y: -0.8, x: -0.2, x2: 0.2 },
+                hips: { y: 0.1, x: -0.15, x2: 0.15 },
+                knees: { y: 0.3, x: -0.2, x2: 0.3 }, // Chân phải giơ ngang
+                ankles: { y: 0.5, x: -0.2, x2: 0.45 } // Mắt cá chân phải ngang
+            }),
+            
+            // Pose 7: TAY DANG NGANG + MỘT CHÂN GIƠ VỀ SAU (Balancing pose)
+            this.createPoseTemplate({
+                shoulders: { y: -0.3, x: -0.35, x2: 0.35 }, // Tay dang rất rộng
+                elbows: { y: -0.3, x: -0.45, x2: 0.45 },
+                wrists: { y: -0.3, x: -0.55, x2: 0.55 },
+                hips: { y: 0.1, x: -0.1, x2: 0.1 },
+                knees: { y: 0.3, x: -0.1, x2: 0.3 }, // Chân phải giơ về sau
+                ankles: { y: 0.5, x: -0.1, x2: 0.4 } // Mắt cá chân phải cao
+            }),
+            
+            // Pose 8: CHÂN RỘNG HẾT CỠ + SQUAT + TAY DANG NGANG (Wide squat)
+            this.createPoseTemplate({
+                shoulders: { y: -0.25, x: -0.35, x2: 0.35 }, // Tay dang rất rộng
+                elbows: { y: -0.25, x: -0.45, x2: 0.45 },
+                wrists: { y: -0.25, x: -0.55, x2: 0.55 },
+                hips: { y: 0.2, x: -0.3, x2: 0.3 }, // Chân rất rộng
+                knees: { y: 0.4, x: -0.35, x2: 0.35 }, // Đầu gối rất rộng
+                ankles: { y: 0.5, x: -0.35, x2: 0.35 }
+            }),
+            
+            // Pose 9: MỘT CHÂN CO CAO + TAY GIƠ CAO (High knee)
+            this.createPoseTemplate({
+                shoulders: { y: -0.3, x: -0.15, x2: 0.15 },
+                elbows: { y: -0.6, x: -0.2, x2: 0.2 },
+                wrists: { y: -0.8, x: -0.2, x2: 0.2 },
+                hips: { y: 0.1, x: -0.1, x2: 0.1 },
+                knees: { y: 0.3, x: -0.15, x2: 0.4 }, // Chân phải co rất cao
+                ankles: { y: 0.5, x: -0.15, x2: 0.5 } // Mắt cá chân phải rất cao
+            }),
+            
+            // Pose 10: TAY GIƠ CAO + CHÂN RỘNG + MỘT CHÂN CO (Star pose variation)
+            this.createPoseTemplate({
+                shoulders: { y: -0.3, x: -0.15, x2: 0.15 },
+                elbows: { y: -0.65, x: -0.2, x2: 0.2 },
+                wrists: { y: -0.85, x: -0.2, x2: 0.2 }, // Tay giơ rất cao
+                hips: { y: 0.1, x: -0.25, x2: 0.25 }, // Chân rất rộng
+                knees: { y: 0.3, x: -0.3, x2: 0.35 }, // Chân phải co
+                ankles: { y: 0.5, x: -0.3, x2: 0.5 }
+            }),
+            
+            // Pose 11: TAY DANG NGANG + CHÂN RỘNG + SQUAT (Wide T-pose squat)
+            this.createPoseTemplate({
+                shoulders: { y: -0.2, x: -0.4, x2: 0.4 }, // Tay dang cực rộng
+                elbows: { y: -0.2, x: -0.5, x2: 0.5 },
+                wrists: { y: -0.2, x: -0.6, x2: 0.6 },
+                hips: { y: 0.2, x: -0.25, x2: 0.25 }, // Chân rộng
+                knees: { y: 0.4, x: -0.3, x2: 0.3 }, // Squat
+                ankles: { y: 0.5, x: -0.3, x2: 0.3 }
+            }),
+            
+            // Pose 12: MỘT CHÂN GIƠ VỀ TRƯỚC + TAY DANG NGANG (Forward kick T-pose)
+            this.createPoseTemplate({
+                shoulders: { y: -0.3, x: -0.35, x2: 0.35 }, // Tay dang rộng
+                elbows: { y: -0.3, x: -0.45, x2: 0.45 },
+                wrists: { y: -0.3, x: -0.55, x2: 0.55 },
+                hips: { y: 0.1, x: -0.1, x2: 0.1 },
+                knees: { y: 0.3, x: -0.1, x2: 0.35 }, // Chân phải giơ về trước
+                ankles: { y: 0.5, x: -0.1, x2: 0.5 }
             })
         ];
 
