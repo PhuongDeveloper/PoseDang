@@ -442,28 +442,99 @@ class PoseDetector {
                 return 0;
             }
 
-            // THUẬT TOÁN CẢI TIẾN - CHỈ TÍNH ĐIỂM CHO CÁC PHẦN KHÁC VỚI ĐỨNG THẲNG
+            // THUẬT TOÁN ĐƠN GIẢN HÓA - SO SÁNH TỔNG THỂ HÌNH DÁNG SKELETON
         
         // 1. Kiểm tra đứng im - so sánh với pose chuẩn đứng thẳng
         const standingPose = this.createStandingPose();
         const standingSimilarity = this.quickCompare(this.currentPose, standingPose);
-        // Nếu giống pose đứng thẳng quá 90% → có thể đang đứng im
-        if (standingSimilarity > 0.90) {
-            return Math.max(0, Math.round(standingSimilarity * 20)); // Tối đa 20% nếu đứng im
+        // Nếu giống pose đứng thẳng quá 92% → có thể đang đứng im
+        if (standingSimilarity > 0.92) {
+            return Math.max(0, Math.round(standingSimilarity * 15)); // Tối đa 15% nếu đứng im
         }
         
-        // 2. So sánh target pose với standing pose để xác định phần nào khác với đứng thẳng
-        const targetVsStanding = this.compareTargetWithStanding(targetPose, standingPose);
+        // 2. So sánh tổng thể hình dáng skeleton - ĐƠN GIẢN HÓA
+        // So sánh các điểm quan trọng: vai, hông, đầu gối, cổ tay, mắt cá chân
+        const importantPoints = [
+            [11, 12], // Shoulders
+            [23, 24], // Hips
+            [25, 26], // Knees
+            [27, 28], // Ankles
+            [15, 16], // Wrists
+            [13, 14]  // Elbows
+        ];
         
-        // 3. Tính điểm cho góc khớp - CHỈ TÍNH CHO CÁC PHẦN KHÁC VỚI ĐỨNG THẲNG
+        let totalScore = 0;
+        let totalWeight = 0;
         
-        // Góc chân (quan trọng nhất) - CHỈ TÍNH NẾU TARGET KHÁC VỚI ĐỨNG THẲNG
-        let legAngleScore = 0;
-        let legAngleCount = 0;
-        let legAngleWeight = 0; // Tổng trọng số của các góc chân cần kiểm tra
-        const legAngles = [[23, 25, 27], [24, 26, 28]]; // left knee, right knee
+        // So sánh từng cặp điểm đối xứng
+        importantPoints.forEach(([leftIdx, rightIdx]) => {
+            const currentLeft = this.currentPose[leftIdx];
+            const currentRight = this.currentPose[rightIdx];
+            const targetLeft = targetPose[leftIdx];
+            const targetRight = targetPose[rightIdx];
+            const standingLeft = standingPose[leftIdx];
+            const standingRight = standingPose[rightIdx];
+            
+            // Kiểm tra visibility
+            if (currentLeft && currentRight && targetLeft && targetRight && 
+                standingLeft && standingRight &&
+                (currentLeft.visibility ?? 1) > 0.2 && 
+                (currentRight.visibility ?? 1) > 0.2) {
+                
+                // Tính khoảng cách giữa 2 điểm (chiều rộng)
+                const currentWidth = Math.abs(currentLeft.x - currentRight.x);
+                const targetWidth = Math.abs(targetLeft.x - targetRight.x);
+                const standingWidth = Math.abs(standingLeft.x - standingRight.x);
+                
+                // Tính chiều cao trung bình
+                const currentAvgY = (currentLeft.y + currentRight.y) / 2;
+                const targetAvgY = (targetLeft.y + targetRight.y) / 2;
+                const standingAvgY = (standingLeft.y + standingRight.y) / 2;
+                
+                // Kiểm tra xem target có khác với standing không
+                const widthDiffFromStanding = Math.abs(targetWidth - standingWidth);
+                const heightDiffFromStanding = Math.abs(targetAvgY - standingAvgY);
+                
+                // Nếu target quá giống standing (chiều rộng và chiều cao gần như nhau), không tính điểm
+                if (widthDiffFromStanding < 0.05 && heightDiffFromStanding < 0.05) {
+                    return; // Không tính điểm cho phần này vì giống đứng thẳng
+                }
+                
+                // Tính điểm cho phần này
+                totalWeight += 1;
+                
+                // So sánh chiều rộng
+                let widthScore = 0;
+                if (targetWidth > 0 && currentWidth > 0) {
+                    const widthRatio = Math.min(currentWidth, targetWidth) / Math.max(currentWidth, targetWidth);
+                    widthScore = widthRatio >= 0.7 ? widthRatio : widthRatio * 0.8;
+                }
+                
+                // So sánh chiều cao
+                let heightScore = 0;
+                const heightDiff = Math.abs(currentAvgY - targetAvgY);
+                if (heightDiff <= 0.1) {
+                    heightScore = 1 - (heightDiff / 0.1) * 0.2; // 0-0.1: 80-100%
+                } else if (heightDiff <= 0.2) {
+                    heightScore = 0.8 - ((heightDiff - 0.1) / 0.1) * 0.4; // 0.1-0.2: 40-80%
+                } else if (heightDiff <= 0.3) {
+                    heightScore = 0.4 - ((heightDiff - 0.2) / 0.1) * 0.3; // 0.2-0.3: 10-40%
+                } else {
+                    heightScore = Math.max(0, 0.1 - (heightDiff - 0.3) * 0.3); // >0.3: 0-10%
+                }
+                
+                // Điểm trung bình cho cặp điểm này
+                const pairScore = (widthScore + heightScore) / 2;
+                totalScore += pairScore;
+            }
+        });
         
-        legAngles.forEach(([a, b, c], index) => {
+        // 3. So sánh góc chân và tay (đơn giản hóa)
+        const legAngles = [[23, 25, 27], [24, 26, 28]];
+        let legScore = 0;
+        let legCount = 0;
+        
+        legAngles.forEach(([a, b, c]) => {
             const ca = this.currentPose[a];
             const cb = this.currentPose[b];
             const cc = this.currentPose[c];
@@ -475,48 +546,45 @@ class PoseDetector {
             const sc = standingPose[c];
             
             if (ca && cb && cc && ta && tb && tc && sa && sb && sc &&
-                (ca.visibility ?? 1) > 0.25 && (cb.visibility ?? 1) > 0.25 && (cc.visibility ?? 1) > 0.25) {
+                (ca.visibility ?? 1) > 0.2 && (cb.visibility ?? 1) > 0.2 && (cc.visibility ?? 1) > 0.2) {
                 
                 const targetAngle = this.computeAngle(ta, tb, tc);
                 const standingAngle = this.computeAngle(sa, sb, sc);
                 const angleDiffFromStanding = Math.abs(targetAngle - standingAngle);
                 const normalizedDiff = angleDiffFromStanding > 180 ? 360 - angleDiffFromStanding : angleDiffFromStanding;
                 
-                // Nếu target pose có chân đứng thẳng (góc gần với standing < 12 độ), không tính điểm chân này
-                if (normalizedDiff < 12) {
-                    // Không tính điểm cho chân này vì nó giống đứng thẳng
+                // Nếu target có chân đứng thẳng (< 10 độ), không tính điểm
+                if (normalizedDiff < 10) {
                     return;
                 }
                 
-                // Chân này khác với đứng thẳng, cần kiểm tra
-                legAngleWeight += 1;
-                
+                legCount++;
                 const currentAngle = this.computeAngle(ca, cb, cc);
                 let diff = Math.abs(currentAngle - targetAngle);
                 if (diff > 180) diff = 360 - diff;
                 
-                // Tolerance nới lỏng hơn để dễ đạt điểm hơn
+                // Tolerance rất rộng để dễ đạt điểm
                 let similarity = 0;
-                if (diff <= 25) {
-                    similarity = 1 - (diff / 25) * 0.15; // 0-25 độ: 85-100%
-                } else if (diff <= 45) {
-                    similarity = 0.85 - ((diff - 25) / 20) * 0.35; // 25-45 độ: 50-85%
-                } else if (diff <= 70) {
-                    similarity = 0.5 - ((diff - 45) / 25) * 0.35; // 45-70 độ: 15-50%
+                if (diff <= 35) {
+                    similarity = 1 - (diff / 35) * 0.1; // 0-35 độ: 90-100%
+                } else if (diff <= 60) {
+                    similarity = 0.9 - ((diff - 35) / 25) * 0.3; // 35-60 độ: 60-90%
+                } else if (diff <= 90) {
+                    similarity = 0.6 - ((diff - 60) / 30) * 0.4; // 60-90 độ: 20-60%
                 } else {
-                    similarity = Math.max(0, 0.15 - (diff - 70) / 400); // >70 độ: 0-15%
+                    similarity = Math.max(0, 0.2 - (diff - 90) / 300); // >90 độ: 0-20%
                 }
                 
-                legAngleScore += similarity;
-                legAngleCount++;
+                legScore += similarity;
             }
         });
         
-        // Góc tay - CHỈ TÍNH NẾU TARGET KHÁC VỚI ĐỨNG THẲNG
-        let armAngleScore = 0;
-        let armAngleCount = 0;
-        let armAngleWeight = 0;
+        const finalLegScore = legCount > 0 ? (legScore / legCount) : 0;
+        
+        // 4. So sánh góc tay
         const armAngles = [[11, 13, 15], [12, 14, 16]];
+        let armScore = 0;
+        let armCount = 0;
         
         armAngles.forEach(([a, b, c]) => {
             const ca = this.currentPose[a];
@@ -530,186 +598,66 @@ class PoseDetector {
             const sc = standingPose[c];
             
             if (ca && cb && cc && ta && tb && tc && sa && sb && sc &&
-                (ca.visibility ?? 1) > 0.25 && (cb.visibility ?? 1) > 0.25 && (cc.visibility ?? 1) > 0.25) {
+                (ca.visibility ?? 1) > 0.2 && (cb.visibility ?? 1) > 0.2 && (cc.visibility ?? 1) > 0.2) {
                 
                 const targetAngle = this.computeAngle(ta, tb, tc);
                 const standingAngle = this.computeAngle(sa, sb, sc);
                 const angleDiffFromStanding = Math.abs(targetAngle - standingAngle);
                 const normalizedDiff = angleDiffFromStanding > 180 ? 360 - angleDiffFromStanding : angleDiffFromStanding;
                 
-                // Nếu target pose có tay đứng thẳng (góc gần với standing < 18 độ), không tính điểm tay này
-                if (normalizedDiff < 18) {
+                // Nếu target có tay đứng thẳng (< 15 độ), không tính điểm
+                if (normalizedDiff < 15) {
                     return;
                 }
                 
-                // Tay này khác với đứng thẳng, cần kiểm tra
-                armAngleWeight += 1;
-                
+                armCount++;
                 const currentAngle = this.computeAngle(ca, cb, cc);
                 let diff = Math.abs(currentAngle - targetAngle);
                 if (diff > 180) diff = 360 - diff;
                 
-                // Tolerance nới lỏng hơn để dễ đạt điểm hơn
+                // Tolerance rất rộng
                 let similarity = 0;
-                if (diff <= 30) {
-                    similarity = 1 - (diff / 30) * 0.2; // 0-30 độ: 80-100%
-                } else if (diff <= 55) {
-                    similarity = 0.8 - ((diff - 30) / 25) * 0.4; // 30-55 độ: 40-80%
+                if (diff <= 40) {
+                    similarity = 1 - (diff / 40) * 0.15; // 0-40 độ: 85-100%
+                } else if (diff <= 70) {
+                    similarity = 0.85 - ((diff - 40) / 30) * 0.35; // 40-70 độ: 50-85%
                 } else {
-                    similarity = Math.max(0, 0.4 - (diff - 55) / 200); // >55 độ: 0-40%
+                    similarity = Math.max(0, 0.5 - (diff - 70) / 200); // >70 độ: 0-50%
                 }
                 
-                armAngleScore += similarity;
-                armAngleCount++;
+                armScore += similarity;
             }
         });
         
-        const finalLegAngleScore = legAngleCount > 0 ? (legAngleScore / legAngleCount) : 0;
-        const finalArmAngleScore = armAngleCount > 0 ? (armAngleScore / armAngleCount) : 0;
+        const finalArmScore = armCount > 0 ? (armScore / armCount) : 0;
         
-        // 4. Tỷ lệ xương - CHỈ TÍNH CHO CÁC PHẦN KHÁC VỚI ĐỨNG THẲNG
-        let legBoneScore = 0;
-        let legBoneCount = 0;
-        let legBoneWeight = 0;
-        const legBones = [[23, 25], [25, 27], [24, 26], [26, 28]];
-        
-        legBones.forEach(([a, b]) => {
-            const ca = this.currentPose[a];
-            const cb = this.currentPose[b];
-            const ta = targetPose[a];
-            const tb = targetPose[b];
-            const sa = standingPose[a];
-            const sb = standingPose[b];
-            
-            if (ca && cb && ta && tb && sa && sb &&
-                (ca.visibility ?? 1) > 0.25 && (cb.visibility ?? 1) > 0.25) {
-                
-                const targetLen = Math.sqrt(Math.pow(ta.x - tb.x, 2) + Math.pow(ta.y - tb.y, 2));
-                const standingLen = Math.sqrt(Math.pow(sa.x - sb.x, 2) + Math.pow(sa.y - sb.y, 2));
-                
-                // Nếu tỷ lệ xương target gần với standing (< 10% khác biệt), không tính điểm
-                if (standingLen > 0 && targetLen > 0) {
-                    const ratio = Math.min(targetLen, standingLen) / Math.max(targetLen, standingLen);
-                    if (ratio > 0.9) {
-                        // Xương này giống đứng thẳng, không tính điểm
-                        return;
-                    }
-                }
-                
-                // Xương này khác với đứng thẳng, cần kiểm tra
-                legBoneWeight += 1;
-                
-                const currentLen = Math.sqrt(Math.pow(ca.x - cb.x, 2) + Math.pow(ca.y - cb.y, 2));
-                if (targetLen > 0 && currentLen > 0) {
-                    const ratio = Math.min(currentLen, targetLen) / Math.max(currentLen, targetLen);
-                    // Nới lỏng tolerance cho xương chân
-                    const similarity = ratio >= 0.8 ? ratio : ratio * 0.85;
-                    legBoneScore += similarity;
-                    legBoneCount++;
-                }
-            }
-        });
-        
-        let armBoneScore = 0;
-        let armBoneCount = 0;
-        let armBoneWeight = 0;
-        const armBones = [[11, 13], [13, 15], [12, 14], [14, 16]];
-        
-        armBones.forEach(([a, b]) => {
-            const ca = this.currentPose[a];
-            const cb = this.currentPose[b];
-            const ta = targetPose[a];
-            const tb = targetPose[b];
-            const sa = standingPose[a];
-            const sb = standingPose[b];
-            
-            if (ca && cb && ta && tb && sa && sb &&
-                (ca.visibility ?? 1) > 0.25 && (cb.visibility ?? 1) > 0.25) {
-                
-                const targetLen = Math.sqrt(Math.pow(ta.x - tb.x, 2) + Math.pow(ta.y - tb.y, 2));
-                const standingLen = Math.sqrt(Math.pow(sa.x - sb.x, 2) + Math.pow(sa.y - sb.y, 2));
-                
-                // Nếu tỷ lệ xương target gần với standing (< 15% khác biệt), không tính điểm
-                if (standingLen > 0 && targetLen > 0) {
-                    const ratio = Math.min(targetLen, standingLen) / Math.max(targetLen, standingLen);
-                    if (ratio > 0.85) {
-                        // Xương này giống đứng thẳng, không tính điểm
-                        return;
-                    }
-                }
-                
-                // Xương này khác với đứng thẳng, cần kiểm tra
-                armBoneWeight += 1;
-                
-                const currentLen = Math.sqrt(Math.pow(ca.x - cb.x, 2) + Math.pow(ca.y - cb.y, 2));
-                if (targetLen > 0 && currentLen > 0) {
-                    const ratio = Math.min(currentLen, targetLen) / Math.max(currentLen, targetLen);
-                    // Nới lỏng tolerance cho xương tay
-                    const similarity = ratio >= 0.75 ? ratio : ratio * 0.75;
-                    armBoneScore += similarity;
-                    armBoneCount++;
-                }
-            }
-        });
-        
-        const finalLegBoneScore = legBoneCount > 0 ? (legBoneScore / legBoneCount) : 0;
-        const finalArmBoneScore = armBoneCount > 0 ? (armBoneScore / armBoneCount) : 0;
-        
-        // 5. Kết hợp với trọng số - CHỈ TÍNH CÁC PHẦN KHÁC VỚI ĐỨNG THẲNG
-        // Tính tổng trọng số dựa trên số phần cần kiểm tra
-        const totalWeight = legAngleWeight + legBoneWeight + armAngleWeight + armBoneWeight;
-        
-        if (totalWeight === 0) {
-            // Nếu không có phần nào khác với đứng thẳng, trả về điểm thấp
-            return Math.round(standingSimilarity * 30);
-        }
-        
-        // Tính điểm dựa trên tỷ lệ các phần cần kiểm tra
-        const legWeight = (legAngleWeight + legBoneWeight) / totalWeight;
-        const armWeight = (armAngleWeight + armBoneWeight) / totalWeight;
-        
+        // 5. Tính điểm tổng thể
         let finalScore = 0;
         
-        if (legAngleWeight > 0 || legBoneWeight > 0) {
-            const legScore = (finalLegAngleScore * legAngleWeight + finalLegBoneScore * legBoneWeight) / 
-                           (legAngleWeight + legBoneWeight);
-            finalScore += legScore * legWeight * 0.7; // Chân chiếm 70% trọng số
+        // Điểm từ so sánh hình dáng tổng thể (60%)
+        if (totalWeight > 0) {
+            const shapeScore = totalScore / totalWeight;
+            finalScore += shapeScore * 0.6;
         }
         
-        if (armAngleWeight > 0 || armBoneWeight > 0) {
-            const armScore = (finalArmAngleScore * armAngleWeight + finalArmBoneScore * armBoneWeight) / 
-                           (armAngleWeight + armBoneWeight);
-            finalScore += armScore * armWeight * 0.3; // Tay chiếm 30% trọng số
+        // Điểm từ góc chân (30%)
+        if (legCount > 0) {
+            finalScore += finalLegScore * 0.3;
         }
         
-        // 6. Penalty nhẹ hơn cho thiếu điểm các phần cần kiểm tra
-        if (legAngleWeight > 0 && legAngleCount === 0) {
-            finalScore *= 0.5; // Thiếu góc chân cần kiểm tra → giảm 50%
-        }
-        if (legBoneWeight > 0 && legBoneCount === 0) {
-            finalScore *= 0.6; // Thiếu xương chân cần kiểm tra → giảm 40%
-        }
-        if (armAngleWeight > 0 && armAngleCount === 0) {
-            finalScore *= 0.7; // Thiếu góc tay cần kiểm tra → giảm 30%
-        }
-        if (armBoneWeight > 0 && armBoneCount === 0) {
-            finalScore *= 0.8; // Thiếu xương tay cần kiểm tra → giảm 20%
+        // Điểm từ góc tay (10%)
+        if (armCount > 0) {
+            finalScore += finalArmScore * 0.1;
         }
         
-        // 7. Yêu cầu điểm tối thiểu nhẹ hơn cho các phần cần kiểm tra
-        if (legAngleWeight > 0 && finalLegAngleScore < 0.4) {
-            finalScore *= 0.85; // Chân không đủ chính xác → giảm 15%
-        }
-        if (legBoneWeight > 0 && finalLegBoneScore < 0.5) {
-            finalScore *= 0.85; // Xương chân không đủ chính xác → giảm 15%
+        // 6. Nếu không có phần nào khác với đứng thẳng, trả về điểm thấp
+        if (totalWeight === 0 && legCount === 0 && armCount === 0) {
+            return Math.round(standingSimilarity * 20);
         }
         
-        // 8. Bonus điểm nếu làm gần đúng (tăng điểm cho các phần gần đúng)
-        if (legAngleWeight > 0 && finalLegAngleScore > 0.5) {
-            finalScore *= 1.1; // Bonus 10% nếu chân làm tốt
-        }
-        if (armAngleWeight > 0 && finalArmAngleScore > 0.5) {
-            finalScore *= 1.05; // Bonus 5% nếu tay làm tốt
+        // 7. Bonus nếu làm tốt
+        if (finalScore > 0.5) {
+            finalScore *= 1.15; // Bonus 15% nếu làm tốt
         }
         
         // Đảm bảo điểm hợp lệ
