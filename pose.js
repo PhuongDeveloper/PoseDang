@@ -503,24 +503,24 @@ class PoseDetector {
                 // Tính điểm cho phần này
                 totalWeight += 1;
                 
-                // So sánh chiều rộng - chặt hơn một chút
+                // So sánh chiều rộng
                 let widthScore = 0;
                 if (targetWidth > 0 && currentWidth > 0) {
                     const widthRatio = Math.min(currentWidth, targetWidth) / Math.max(currentWidth, targetWidth);
-                    widthScore = widthRatio >= 0.75 ? widthRatio * 0.95 : widthRatio * 0.75; // Giảm điểm một chút
+                    widthScore = widthRatio >= 0.7 ? widthRatio : widthRatio * 0.8;
                 }
                 
-                // So sánh chiều cao - chặt hơn một chút
+                // So sánh chiều cao
                 let heightScore = 0;
                 const heightDiff = Math.abs(currentAvgY - targetAvgY);
                 if (heightDiff <= 0.1) {
-                    heightScore = (1 - (heightDiff / 0.1) * 0.2) * 0.95; // 0-0.1: 76-95% (giảm 5%)
+                    heightScore = 1 - (heightDiff / 0.1) * 0.2; // 0-0.1: 80-100%
                 } else if (heightDiff <= 0.2) {
-                    heightScore = (0.8 - ((heightDiff - 0.1) / 0.1) * 0.4) * 0.95; // 0.1-0.2: 38-76%
+                    heightScore = 0.8 - ((heightDiff - 0.1) / 0.1) * 0.4; // 0.1-0.2: 40-80%
                 } else if (heightDiff <= 0.3) {
-                    heightScore = (0.4 - ((heightDiff - 0.2) / 0.1) * 0.3) * 0.95; // 0.2-0.3: 9.5-38%
+                    heightScore = 0.4 - ((heightDiff - 0.2) / 0.1) * 0.3; // 0.2-0.3: 10-40%
                 } else {
-                    heightScore = Math.max(0, (0.1 - (heightDiff - 0.3) * 0.3) * 0.95); // >0.3: 0-9.5%
+                    heightScore = Math.max(0, 0.1 - (heightDiff - 0.3) * 0.3); // >0.3: 0-10%
                 }
                 
                 // Điểm trung bình cho cặp điểm này
@@ -563,16 +563,16 @@ class PoseDetector {
                 let diff = Math.abs(currentAngle - targetAngle);
                 if (diff > 180) diff = 360 - diff;
                 
-                // Tolerance chặt hơn một chút để giảm điểm
+                // Tolerance rất rộng để dễ đạt điểm
                 let similarity = 0;
                 if (diff <= 35) {
-                    similarity = (1 - (diff / 35) * 0.1) * 0.93; // 0-35 độ: 84-93% (giảm 7%)
+                    similarity = 1 - (diff / 35) * 0.1; // 0-35 độ: 90-100%
                 } else if (diff <= 60) {
-                    similarity = (0.9 - ((diff - 35) / 25) * 0.3) * 0.93; // 35-60 độ: 56-84%
+                    similarity = 0.9 - ((diff - 35) / 25) * 0.3; // 35-60 độ: 60-90%
                 } else if (diff <= 90) {
-                    similarity = (0.6 - ((diff - 60) / 30) * 0.4) * 0.93; // 60-90 độ: 19-56%
+                    similarity = 0.6 - ((diff - 60) / 30) * 0.4; // 60-90 độ: 20-60%
                 } else {
-                    similarity = Math.max(0, (0.2 - (diff - 90) / 300) * 0.93); // >90 độ: 0-19%
+                    similarity = Math.max(0, 0.2 - (diff - 90) / 300); // >90 độ: 0-20%
                 }
                 
                 legScore += similarity;
@@ -615,14 +615,14 @@ class PoseDetector {
                 let diff = Math.abs(currentAngle - targetAngle);
                 if (diff > 180) diff = 360 - diff;
                 
-                // Tolerance chặt hơn một chút để giảm điểm
+                // Tolerance rất rộng
                 let similarity = 0;
                 if (diff <= 40) {
-                    similarity = (1 - (diff / 40) * 0.15) * 0.93; // 0-40 độ: 79-93% (giảm 7%)
+                    similarity = 1 - (diff / 40) * 0.15; // 0-40 độ: 85-100%
                 } else if (diff <= 70) {
-                    similarity = (0.85 - ((diff - 40) / 30) * 0.35) * 0.93; // 40-70 độ: 47-79%
+                    similarity = 0.85 - ((diff - 40) / 30) * 0.35; // 40-70 độ: 50-85%
                 } else {
-                    similarity = Math.max(0, (0.5 - (diff - 70) / 200) * 0.93); // >70 độ: 0-47%
+                    similarity = Math.max(0, 0.5 - (diff - 70) / 200); // >70 độ: 0-50%
                 }
                 
                 armScore += similarity;
@@ -655,13 +655,10 @@ class PoseDetector {
             return Math.round(standingSimilarity * 20);
         }
         
-        // 7. Bonus nếu làm tốt - giảm bonus để khó hơn
+        // 7. Bonus nếu làm tốt
         if (finalScore > 0.5) {
-            finalScore *= 1.08; // Bonus 8% nếu làm tốt (giảm từ 15% xuống 8%)
+            finalScore *= 1.15; // Bonus 15% nếu làm tốt
         }
-        
-        // 8. Giảm điểm tổng thể thêm một chút để khó hơn
-        finalScore *= 0.96; // Giảm thêm 4% điểm tổng thể
         
         // Đảm bảo điểm hợp lệ
         if (!isFinite(finalScore) || isNaN(finalScore)) {
